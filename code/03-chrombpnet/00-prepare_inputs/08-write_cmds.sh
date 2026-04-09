@@ -14,8 +14,6 @@ conda activate chrombpnet
 # source configuration variables
 source ../config.sh
 
-ref_fasta="${refs}/GRCh38_no_alt_analysis_set_GCA_000001405.15.fasta"
-
 input_len=2114
 stride=1000
 

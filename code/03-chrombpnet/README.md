@@ -30,6 +30,7 @@ These are mainly used for the *in silico* experimentation.
 These scripts pertain to generating the necessary inputs for training ChromBPNet models.
 
 - `01`: get fragments per cluster per sample from ArchR projects
+- `01`: alternatively, `00-prepare_inputs/01-get_fragments_from_rds.R` can extract the same per-cluster fragment TSV layout directly from a Seurat `.rds` plus fragment file, which is useful when you want to bypass ArchR
 - `02`: process fragments for calling peaks (generating pseudoreplicates)
 - `03`: group fragments across samples per cell type, and sort fragments
 - `04`: call peaks with macs2 on pseudoreplicates
@@ -105,6 +106,5 @@ This produces one MoDISco h5 object per supercluster, containing merged, non-red
 
 
 _**NOTE**_: variant scoring using ChromBPNet models is done in the `code/06-variants` directory.
-
 
 

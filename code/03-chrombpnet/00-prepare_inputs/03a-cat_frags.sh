@@ -13,6 +13,10 @@
 # source configuration variables
 source ../config.sh
 
+export LC_ALL=C
+export LC_CTYPE=C
+export LANG=C
+
 # specify inuts
 input_basedir="${base_dir%/}/00-inputs/"
 input_parallel=6
@@ -43,30 +47,25 @@ docat () {
 
 	echo "@@ done ${dataset}"
 }
-export -f docat
-
-# get the unique datasets.
-# NOTE: "dataset" here refers to a cluster
-
-# for every [cluster]__[sample].tsv file,
 all_fragments_dir="${in_dir%/}/fragments"
-datasets=$( for frag_file in $(ls "${all_fragments_dir}"); do
-	
-    # extract [cluster] from filename
-    dataset=${frag_file%__*.tsv}
-    
-    # check if the done file exists
-    # if not, keep the dataset & get list of all unique ones
-    done_file="${out_dir}/fragments/.${dataset}.done"
-    if [[ ! -f "$done_file" ]]; then
+datasets=$(
+  find "${all_fragments_dir}" -maxdepth 1 -type f -name '*.tsv' ! -name '._*' -print |
+    while IFS= read -r frag_path; do
+      frag_file=$(basename "${frag_path}")
+      dataset=${frag_file%__*.tsv}
+      done_file="${out_dir}/fragments/.${dataset}.done"
+      if [[ ! -f "$done_file" ]]; then
         echo "$dataset"
-    fi
-	
-	done | uniq )
+      fi
+    done | uniq
+)
 
 
 echo "@ running cat on clusters: ${datasets}"
-parallel --linebuffer -j ${input_parallel} docat {} ${in_dir} ${out_dir} ::: ${datasets}
+
+for dataset in ${datasets}; do
+  docat "${dataset}" "${in_dir}" "${out_dir}"
+done
 
 # DEBUG:
 # docat Brain_c12 ${in_dir} ${out_dir}

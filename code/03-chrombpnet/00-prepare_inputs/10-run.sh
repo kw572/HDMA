@@ -22,7 +22,7 @@ echo "@ formatting peaks for clusters: ${datasets}"
 # DEBUG:
 for dataset in ${datasets[@]}; do
 
-  python 13-subset_backgrounds.py --cluster $dataset --negatives-dir ${negatives_dir} --output-dir ${negatives_subset_dir}
+  python 10-subset_backgrounds.py --cluster $dataset --negatives-dir ${negatives_dir} --output-dir ${negatives_subset_dir}
   
 done
 

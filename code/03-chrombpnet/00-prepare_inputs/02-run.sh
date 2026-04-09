@@ -13,9 +13,17 @@ conda activate chrombpnet
 # source configuration variables
 source ../config.sh
 
+export LC_ALL=C
+export LC_CTYPE=C
+export LANG=C
+
 input_parallel=8
-datasets1=$(ls ${sample_frags_dir}/fragments/*.tsv | xargs -n 1 -I {} basename {} .tsv)	
-# echo $datasets
+datasets1=$(
+  find "${sample_frags_dir}/fragments" -maxdepth 1 -type f -name '*.tsv' ! -name '._*' -print |
+    while IFS= read -r path; do
+      basename "${path}" .tsv
+    done
+)
 
 datasets2=$( for dataset in ${datasets1[@]}; do
 
@@ -26,11 +34,13 @@ datasets2=$( for dataset in ${datasets1[@]}; do
         echo "${dataset}.tsv"
     fi
 
-	done | uniq )
+done | uniq )
 
 
 echo "@ processing fragments file: ${datasets2}"
 
-parallel -j ${input_parallel} python 02-process_frags.py {} ${sample_frags_dir} ::: ${datasets2}
+for dataset in ${datasets2}; do
+  python 02-process_frags.py "${dataset}" "${sample_frags_dir}" "${chromsizes}"
+done
 
 echo "@ done"
