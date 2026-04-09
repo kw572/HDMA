@@ -12,26 +12,37 @@
 # $ organs=( Adrenal Brain Eye Heart Liver Lung Muscle Skin Spleen Stomach Thymus Thyroid )
 # $ for i in ${organs[@]}; do sbatch 12-annotate_peaks.sh $i; sleep 1s; done
 
+set -euo pipefail
+
 source ../config.sh
-organ=$1
-input_parallel=6
 
-echo $organ
+export LC_ALL=C
+export LC_CTYPE=C
+export LANG=C
 
-# get datasets
-datasets=$(awk '{print $1}' ${chrombpnet_models_keep2})
-datasets_organ=( $(echo ${datasets[@]} | tr ' ' '\n' | grep ${organ}) )
+genome_id="${1:-GRCz11}"
 
-datasets_to_do=$( for dataset in ${datasets_organ[@]}; do
+datasets=$(
+  find "${chrombpnet_peaks_dir}" -maxdepth 1 -type f -name '*__peaks_bpnet.narrowPeak' ! -name '._*' -print |
+    while IFS= read -r path; do
+      basename "${path}" __peaks_bpnet.narrowPeak
+    done
+)
 
-    # check if the out files exist
+datasets_to_do=$(
+  for dataset in ${datasets}; do
     out_file="${anno_peaks_dir%/}/${dataset}__peaks_bpnet.annotated.tsv"
-    if [[ ! -f "$out_file" ]]; then
-        echo "$dataset"
+    if [[ ! -f "${out_file}" ]]; then
+      echo "${dataset}"
     fi
+  done
+)
 
-	done | uniq )
+echo "@ Annotating cell types: ${datasets_to_do}"
 
-echo "@ Processing cell types: ${datasets_to_do[@]}"
-
-parallel --linebuffer -j ${input_parallel} bash 12-jobscript.sh {} ::: ${datasets_to_do[@]}
+for dataset in ${datasets_to_do}; do
+  peaks_file="${chrombpnet_peaks_dir%/}/${dataset}__peaks_bpnet.narrowPeak"
+  out_tsv="${anno_peaks_dir%/}/${dataset}__peaks_bpnet.annotated.tsv"
+  echo "@ ${dataset}"
+  Rscript 12-annotate_peaks.R "${peaks_file}" "${out_tsv}" "${genome_id}"
+done

@@ -6,15 +6,14 @@
 # libraries
 library(here)
 library(ArchR)
-library(BSgenome.Hsapiens.UCSC.hg38)
-library(TxDb.Hsapiens.UCSC.hg38.knownGene)
-library(org.Hs.eg.db)
+library(BSgenome)
 library(dplyr)
 library(tidyr)
 library(data.table)
 library(readr)
 library(ggplot2)
 library(cowplot)
+library(GenomeInfoDb)
 
 
 # 0. GET ARGS ------------------------------------------------------------------
@@ -23,6 +22,74 @@ print(args)
 
 peaks_bed     = args[1]
 peaks_tsv_out = args[2]
+genome_id     = ifelse(length(args) >= 3, args[3], "hg38")
+
+
+get_annotation_resources <- function(genome_id) {
+  if (genome_id %in% c("danRer11", "GRCz11", "drerio")) {
+    if (!requireNamespace("BSgenome.Drerio.UCSC.danRer11", quietly = TRUE)) {
+      stop("Missing package: BSgenome.Drerio.UCSC.danRer11")
+    }
+    if (!requireNamespace("TxDb.Drerio.UCSC.danRer11.refGene", quietly = TRUE)) {
+      stop("Missing package: TxDb.Drerio.UCSC.danRer11.refGene")
+    }
+    if (!requireNamespace("org.Dr.eg.db", quietly = TRUE)) {
+      stop("Missing package: org.Dr.eg.db")
+    }
+
+    list(
+      archr_genome = "danRer11",
+      bsgenome = BSgenome.Drerio.UCSC.danRer11::BSgenome.Drerio.UCSC.danRer11,
+      txdb = TxDb.Drerio.UCSC.danRer11.refGene::TxDb.Drerio.UCSC.danRer11.refGene,
+      orgdb = org.Dr.eg.db::org.Dr.eg.db
+    )
+  } else if (genome_id %in% c("hg38", "GRCh38", "human")) {
+    if (!requireNamespace("BSgenome.Hsapiens.UCSC.hg38", quietly = TRUE)) {
+      stop("Missing package: BSgenome.Hsapiens.UCSC.hg38")
+    }
+    if (!requireNamespace("TxDb.Hsapiens.UCSC.hg38.knownGene", quietly = TRUE)) {
+      stop("Missing package: TxDb.Hsapiens.UCSC.hg38.knownGene")
+    }
+    if (!requireNamespace("org.Hs.eg.db", quietly = TRUE)) {
+      stop("Missing package: org.Hs.eg.db")
+    }
+
+    list(
+      archr_genome = "hg38",
+      bsgenome = BSgenome.Hsapiens.UCSC.hg38::BSgenome.Hsapiens.UCSC.hg38,
+      txdb = TxDb.Hsapiens.UCSC.hg38.knownGene::TxDb.Hsapiens.UCSC.hg38.knownGene,
+      orgdb = org.Hs.eg.db::org.Hs.eg.db
+    )
+  } else {
+    stop(paste("Unsupported genome_id:", genome_id))
+  }
+}
+
+resources <- get_annotation_resources(genome_id)
+
+normalize_peak_seqlevels <- function(peaks, resources) {
+  peak_levels <- as.character(seqlevels(peaks))
+  genome_levels <- as.character(seqlevels(resources$bsgenome))
+
+  if (length(peak_levels) == 0 || length(genome_levels) == 0) {
+    return(peaks)
+  }
+
+  has_peak_chr <- any(grepl("^chr", peak_levels))
+  has_genome_chr <- any(grepl("^chr", genome_levels))
+
+  if (!has_peak_chr && has_genome_chr) {
+    rename_map <- stats::setNames(paste0("chr", peak_levels), peak_levels)
+    peaks <- renameSeqlevels(peaks, rename_map)
+  } else if (has_peak_chr && !has_genome_chr) {
+    rename_map <- stats::setNames(sub("^chr", "", peak_levels), peak_levels)
+    peaks <- renameSeqlevels(peaks, rename_map)
+  }
+
+  common_levels <- intersect(seqlevels(peaks), genome_levels)
+  peaks <- keepSeqlevels(peaks, common_levels, pruning.mode = "coarse")
+  peaks
+}
 
 
 
@@ -40,6 +107,10 @@ peaks <- rtracklayer::import.bed(peaks_bed, extraCols = c("a" = "character",
 print(head(peaks))
 print(length(peaks))
 
+peaks <- normalize_peak_seqlevels(peaks, resources)
+print(head(peaks))
+print(length(peaks))
+
 
 
 # 2. COMPUTE GENOMIC ANNO ------------------------------------------------------
@@ -49,7 +120,7 @@ message("@ computing genomic annotation...")
 # location it occurs in (promoter, intronic, exonic, distal) as per the ArchR definitions.
 
 # set default genome
-addArchRGenome("hg38")
+addArchRGenome(resources$archr_genome)
 
 # get gene annotation
 
@@ -57,7 +128,7 @@ addArchRGenome("hg38")
 # gene_annotation <- getArchRGenome(geneAnnotation = TRUE, genomeAnnotation = FALSE) %>% as.list
 
 # Get the latest anno
-gene_annotation <- ArchR::createGeneAnnotation(OrgDb = org.Hs.eg.db, TxDb = TxDb.Hsapiens.UCSC.hg38.knownGene)
+gene_annotation <- ArchR::createGeneAnnotation(OrgDb = resources$orgdb, TxDb = resources$txdb)
 
 # > gene_annotation$TSS@metadata %>% unlist() %>% tibble::enframe()
 # # A tibble: 18 × 2
@@ -90,7 +161,7 @@ gene_annotation <- gene_annotation %>% as.list()
 
 # about 10 min
 Sys.time()
-peaks_anno <- ArchR:::.fastAnnoPeaks(peaks, BSgenome = BSgenome.Hsapiens.UCSC.hg38, geneAnnotation = gene_annotation, promoterRegion = c(2000, 2000))
+peaks_anno <- ArchR:::.fastAnnoPeaks(peaks, BSgenome = resources$bsgenome, geneAnnotation = gene_annotation, promoterRegion = c(2000, 2000))
 Sys.time()
 print(length(peaks_anno))
 
@@ -112,4 +183,3 @@ print(head(peaks_anno_df))
 write_tsv(peaks_anno_df, file = peaks_tsv_out)
 
 message("@ done.")
-
