@@ -9,6 +9,16 @@ import sys
 cluster = sys.argv[1]
 peaks_dir = sys.argv[2]
 out_dir = sys.argv[3]
+chromsizes_file = sys.argv[4]
+
+chromsizes = {}
+with open(chromsizes_file, "r") as f_sizes:
+	for line in f_sizes:
+		line = line.strip()
+		if not line:
+			continue
+		chro, size = line.split("\t")[:2]
+		chromsizes[chro] = int(size)
 
 print(f"----- {cluster} -----")
 inpeak_file = f"{peaks_dir}/{cluster}__peaks_overlap_filtered.narrowPeak"
@@ -20,4 +30,9 @@ with open(inpeak_file, "r") as f_in, open(out_file, "w") as f_out:
 		midpoint = int(start) + int(peak)
 		start_new = midpoint - 500; end_new = midpoint + 500
 		assert(end_new - start_new == 1000)
+		chrom_end = chromsizes.get(chro)
+		if chrom_end is None:
+			continue
+		if start_new < 0 or end_new > chrom_end:
+			continue
 		f_out.write(f"{chro}\t{start_new}\t{end_new}\t.\t.\t.\t.\t.\t.\t500\n")

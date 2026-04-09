@@ -14,14 +14,24 @@ conda activate chrombpnet
 source ../config.sh
 
 out_dir=$chrombpnet_peaks_dir
-input_parallel=8
-datasets=$(ls $peaks_dir/*__peaks_overlap_filtered.narrowPeak | xargs -n 1 -I {} basename {} __peaks_overlap_filtered.narrowPeak)	
+export LC_ALL=C
+export LC_CTYPE=C
+export LANG=C
+
+datasets=$(
+  find "${peaks_dir}" -maxdepth 1 -type f -name '*__peaks_overlap_filtered.narrowPeak' ! -name '._*' -print |
+    while IFS= read -r path; do
+      basename "${path}" __peaks_overlap_filtered.narrowPeak
+    done
+)
 
 echo "@ formatting peaks for clusters: ${datasets}"
 
 # DEBUG:
 # python 05-format_peaks.py Adrenal_c0 ${peaks_dir} ${out_dir}
 
-parallel -j ${input_parallel} python 05-format_peaks.py {} ${peaks_dir} ${out_dir} ::: ${datasets}
+for dataset in ${datasets}; do
+  python 05-format_peaks.py "${dataset}" "${peaks_dir}" "${out_dir}" "${chromsizes}"
+done
 
 echo "@ done"

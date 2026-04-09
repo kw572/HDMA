@@ -15,20 +15,28 @@ conda activate chrombpnet
 # source configuration variables
 source ../config.sh
 
-module load biology samtools
+export LC_ALL=C
+export LC_CTYPE=C
+export LANG=C
 
-input_parallel=8
-
-peaksets=$(ls ${chrombpnet_peaks_dir}/*.narrowPeak )
-echo ${peaksets[@]}
+peaksets=$(
+    find "${chrombpnet_peaks_dir}" -maxdepth 1 -type f -name '*.narrowPeak' ! -name '._*' -print
+)
+echo "${peaksets}"
 
 idx_pk () {
 
     peakset=$1
-    bgzip -c ${peakset} > ${peakset}.gz
-    tabix -p bed ${peakset}.gz
+    tmp_sorted="${peakset}.sorted"
+    bedtools sort -faidx "${chromsizes}" -i "${peakset}" > "${tmp_sorted}"
+    mv "${tmp_sorted}" "${peakset}"
+    bgzip -c "${peakset}" > "${peakset}.gz"
+    tabix -p bed "${peakset}.gz"
 
 }
 export -f idx_pk
 
-parallel -j ${input_parallel} idx_pk {} ::: ${peaksets}
+while IFS= read -r peakset; do
+    [[ -n "${peakset}" ]] || continue
+    idx_pk "${peakset}"
+done <<< "${peaksets}"

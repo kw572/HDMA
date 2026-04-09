@@ -15,20 +15,25 @@ conda activate chrombpnet
 # source configuration variables
 source ../config.sh
 
-module load biology samtools
+export LC_ALL=C
+export LC_CTYPE=C
+export LANG=C
 
-input_parallel=8
-
-fragsets=$(ls ${cluster_frags_dir}/fragments/*.tsv )
-echo ${fragsets[@]}
+fragsets=$(
+    find "${cluster_frags_dir}/fragments" -maxdepth 1 -type f -name '*__sorted.tsv' ! -name '._*' -print
+)
+echo "${fragsets}"
 
 idx_frag () {
 
     fragset=$1
-    bgzip -c ${fragset} > ${fragset}.gz
-    tabix -p bed ${fragset}.gz
+    bgzip -c "${fragset}" > "${fragset}.gz"
+    tabix -p bed "${fragset}.gz"
 
 }
 export -f idx_frag
 
-parallel -j ${input_parallel} idx_frag {} ::: ${fragsets}
+while IFS= read -r fragset; do
+    [[ -n "${fragset}" ]] || continue
+    idx_frag "${fragset}"
+done <<< "${fragsets}"

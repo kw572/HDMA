@@ -42,6 +42,27 @@ These scripts pertain to generating the necessary inputs for training ChromBPNet
 - `09`: tabix-index peaks for viewing in browser
 - `10`: randomly subset backgrounds to 100 regions per cell type to use for downstream analysis
 
+### Notes on local compatibility changes
+
+The local edits used for running `00-inputs` on this Mac fall into two groups.
+
+Mac-only / local shell compatibility:
+- wrapper scripts were adjusted to tolerate paths with spaces, local `bash` behavior, and the absence of cluster-only assumptions such as `module load`
+- several runners were changed to avoid fragile `parallel` usage for local execution
+- local runs use the explicit conda env / local binary paths when needed
+
+General portability / non-Mac-specific changes:
+- `01` can now start from a Seurat `.rds` plus fragment file instead of requiring ArchR
+- chromosome names are normalized so either `1` or `chr1`-style fragment inputs can be matched against the reference genome files
+- downstream preprocessing no longer assumes human-only references; scripts now respect `chromsizes`, `ref_fasta`, and computed genome size from `config.sh`
+- local ChromBPNet prep was patched to work with numeric chromosome names such as zebrafish `1`-`25`
+- peak formatting now drops out-of-bounds summit-centered windows, which is useful for smaller genomes and is not specific to macOS
+- empty blacklist files are handled cleanly, which is useful when no curated blacklist is available for the target genome
+
+Zebrafish-specific configuration in the local test run:
+- the current local config uses `Danio rerio` GRCz11 reference files and chromosome sizes
+- `07` split generation was adapted to build folds from the chromosomes actually present in the configured genome, instead of relying on the original human chromosome lists
+
 
 
 
@@ -106,5 +127,4 @@ This produces one MoDISco h5 object per supercluster, containing merged, non-red
 
 
 _**NOTE**_: variant scoring using ChromBPNet models is done in the `code/06-variants` directory.
-
 
