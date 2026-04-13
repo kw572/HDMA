@@ -31,7 +31,7 @@ slurm_job_active() {
 	squeue -h -u "${USER}" -n "${job_name}" -t PENDING,RUNNING,CONFIGURING,COMPLETING,SUSPENDED 2>/dev/null | grep -q .
 }
 
-read -r -a train_sbatch_extra_args <<< "${CHROMBPNET_TRAIN_SBATCH_ARGS:---partition=main}"
+read -r -a train_sbatch_extra_args <<< "${CHROMBPNET_TRAIN_SBATCH_ARGS:---partition=gpu}"
 dataset_filter_regex="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
 
 
