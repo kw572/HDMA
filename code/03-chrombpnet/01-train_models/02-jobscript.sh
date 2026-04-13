@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 #SBATCH --output=../../logs/03-chrombpnet/01/02/%x-%j.out
 #SBATCH -p akundaje,gpu
 #SBATCH -t 2-0
@@ -8,6 +7,8 @@ set -euo pipefail
 #SBATCH --gres=gpu:a40:1
 #SBATCH --requeue
 #SBATCH --open-mode=append
+
+set -euo pipefail
 
 
 # PARSE ARGUMENTS --------------------------------------------------------------

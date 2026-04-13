@@ -1,11 +1,12 @@
 #!/bin/bash
-set -euo pipefail
 #SBATCH --output=../../logs/03-chrombpnet/01/06/%x-%j.out
 #SBATCH -p akundaje,wjg,biochem,sfgf
 #SBATCH -t 2-0
 #SBATCH --mem=50G
 #SBATCH -C NO_GPU
 #SBATCH --cpus-per-task=12
+
+set -euo pipefail
 
 
 peak_shaps="${1}"

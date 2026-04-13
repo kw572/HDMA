@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 #SBATCH --output=../../logs/03-chrombpnet/01/04/%x-%j.out
 #SBATCH -p akundaje,wjg,biochem,sfgf
 #SBATCH --time=2-00:00:00
@@ -8,6 +7,8 @@ set -euo pipefail
 #SBATCH --gres=gpu:a40:1
 #SBATCH --requeue
 #SBATCH --open-mode=append
+
+set -euo pipefail
 
 # NOTE: for jobs that timeout with 2 days,
 # switch, set a longer time limit and submit to akundaje partition only
