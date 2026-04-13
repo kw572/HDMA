@@ -22,9 +22,21 @@
 eval "$(conda shell.bash hook)"
 conda activate chrombpnet
 
+load_optional_module() {
+  local mod="$1"
+  [[ -n "${mod}" ]] || return 0
+  if module -t avail "${mod}" 2>&1 | grep -Fq "${mod}"; then
+    module load "${mod}"
+  else
+    echo "WARNING: module '${mod}' is unavailable; continuing without it."
+  fi
+}
+
 # load modules
-module load cuda/11.2.0
-module load cudnn/8.1.1.33
+CUDA_MODULE="${CUDA_MODULE:-cuda/11.2}"
+CUDNN_MODULE="${CUDNN_MODULE:-cudnn/8.1}"
+load_optional_module "${CUDA_MODULE}"
+load_optional_module "${CUDNN_MODULE}"
 module load system
 module load libxml2
 module load libxslt
