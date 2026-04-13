@@ -25,7 +25,7 @@
 source ../config.sh
 
 finemo_param="counts_v0.23_a0.8_all"
-ref_fasta="${refs}/GRCh38_no_alt_analysis_set_GCA_000001405.15.fasta"
+ref_fasta="${ref_fasta}"
 
 
 # make out dir
@@ -107,4 +107,3 @@ done
 #   # fi
 # 
 # done
-

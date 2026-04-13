@@ -18,7 +18,7 @@ source ../config.sh
 input_parallel=6
 export out_dir="${bigwigs_scratch%/}"
 export script_loc="${chrombpnet_code}/chrombpnet/helpers/preprocessing/reads_to_bigwig.py"
-export fasta_file="${refs}/GRCh38_no_alt_analysis_set_GCA_000001405.15.fasta"
+export fasta_file="${ref_fasta}"
 export cluster_frags_dir="${cluster_frags_dir%/}"
 export chromsizes=$chromsizes
 
