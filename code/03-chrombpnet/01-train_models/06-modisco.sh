@@ -31,7 +31,7 @@ slurm_job_active() {
   squeue -h -u "${USER}" -n "${job_name}" -t PENDING,RUNNING,CONFIGURING,COMPLETING,SUSPENDED 2>/dev/null | grep -q .
 }
 
-read -r -a modisco_sbatch_extra_args <<< "${CHROMBPNET_MODISCO_SBATCH_ARGS:-}"
+read -r -a modisco_sbatch_extra_args <<< "${CHROMBPNET_MODISCO_SBATCH_ARGS:---partition=main}"
 dataset_filter_regex="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
 
 if [[ -z "${meme_db}" ]]; then

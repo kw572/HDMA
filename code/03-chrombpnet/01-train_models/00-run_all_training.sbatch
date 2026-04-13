@@ -61,6 +61,7 @@ MEME_DB="${MEME_DB:-${refs}/JASPAR_CORE_2016_vertebrates.meme}"
 R_MODULE="${R_MODULE:-rstats/4.5.1}"
 POLL_SECONDS="${POLL_SECONDS:-60}"
 DATASET_FILTER_REGEX="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
+BIAS_SBATCH_ARGS="${BIAS_SBATCH_ARGS:---partition=main}"
 
 mkdir -p Log
 
@@ -182,7 +183,7 @@ else
   BIAS_MIN_THRESH="${BIAS_MIN_THRESH}" \
   BIAS_FOLD="${BIAS_FOLD}" \
   DATA_TYPE="${DATA_TYPE}" \
-  sbatch 01-train_bias_model.sh
+  sbatch ${BIAS_SBATCH_ARGS} 01-train_bias_model.sh
 fi
 
 wait_for_count \

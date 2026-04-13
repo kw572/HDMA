@@ -21,7 +21,7 @@ slurm_job_active() {
   squeue -h -u "${USER}" -n "${job_name}" -t PENDING,RUNNING,CONFIGURING,COMPLETING,SUSPENDED 2>/dev/null | grep -q .
 }
 
-read -r -a avg_sbatch_extra_args <<< "${CHROMBPNET_AVG_SBATCH_ARGS:-}"
+read -r -a avg_sbatch_extra_args <<< "${CHROMBPNET_AVG_SBATCH_ARGS:---partition=main}"
 dataset_filter_regex="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
 
 # CONSTRUCT COMMANDS -----------------------------------------------------------
