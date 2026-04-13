@@ -47,8 +47,9 @@ CUDA_MODULE="${CUDA_MODULE:-cuda/11.2}"
 CUDNN_MODULE="${CUDNN_MODULE:-cudnn/8.1}"
 load_optional_module "${CUDA_MODULE}"
 load_optional_module "${CUDNN_MODULE}"
-module load system cairo # Dependency of pipeline
-module load pango # Dependency for chrombpnet's make_html()
+for mod in system cairo pango; do
+    load_optional_module "${mod}"
+done
 
 echo "--- $(timestamp): Beginning training ---"
 

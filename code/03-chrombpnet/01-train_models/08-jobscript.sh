@@ -56,6 +56,9 @@ CUDA_MODULE="${CUDA_MODULE:-cuda/11.2}"
 CUDNN_MODULE="${CUDNN_MODULE:-cudnn/8.1}"
 load_optional_module "${CUDA_MODULE}"
 load_optional_module "${CUDNN_MODULE}"
+for mod in system cairo pango; do
+  load_optional_module "${mod}"
+done
 
 echo "[$(date +"%m/%d/%Y (%r)")] starting ${celltype}"
 
