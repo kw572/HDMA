@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Purpose: this script generates bigwigs of the predicted bias-corrected or uncorrected
 # chromatin accessibility profiles.
@@ -9,9 +10,9 @@
 source ../config.sh
 
 # set bias model
-bias_params="Heart_c0_thresh0.4"
-model_dir=${models_dir%/}/bias_${bias_params}
-ref_fasta="${refs}/GRCh38_no_alt_analysis_set_GCA_000001405.15.fasta"
+bias_params="${BIAS_PARAMS:-1-col_aspn_ogna_thresh0.4}"
+model_dir="${models_dir%/}/bias_${bias_params}"
+ref_fasta="${ref_fasta}"
 
 echo $model_dir
 echo $ref_fasta
@@ -19,16 +20,43 @@ echo $chromsizes
 
 JOBSCRIPT=08-jobscript.sh
 
-datasets=$(awk '{print $1}' ${chrombpnet_models_keep2})
+slurm_job_active() {
+  local job_name="$1"
+  squeue -h -u "${USER}" -n "${job_name}" -t PENDING,RUNNING,CONFIGURING,COMPLETING,SUSPENDED 2>/dev/null | grep -q .
+}
+
+read -r -a predict_sbatch_extra_args <<< "${CHROMBPNET_PREDICT_SBATCH_ARGS:-}"
+dataset_filter_regex="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
+
+if [[ -f "${chrombpnet_models_keep2}" ]]; then
+  datasets=$(awk '{print $1}' "${chrombpnet_models_keep2}")
+else
+  datasets=$(
+    find "${model_dir}" -mindepth 1 -maxdepth 1 -type d -print |
+      while IFS= read -r path; do
+        basename "${path}"
+      done
+  )
+fi
+
+if [[ -n "${dataset_filter_regex}" ]]; then
+  datasets=$(printf '%s\n' ${datasets} | grep -E "${dataset_filter_regex}" || true)
+fi
+
+if [[ -z "${datasets}" ]]; then
+  echo "No datasets matched CHROMBPNET_DATASET_FILTER_REGEX='${dataset_filter_regex}'"
+  exit 1
+fi
 
 # types of predictions
 modes=("bias_corrected" "uncorrected")
 
-for dataset in "${datasets[@]}"; do
+for dataset in ${datasets}; do
   echo "Processing dataset: ${dataset}"
 
   for mode in "${modes[@]}"; do
     echo "  Mode: ${mode}"
+    job_name="08-predict_${dataset}_${mode}"
 
     # construct paths based on the current mode
     if [[ "$mode" == "bias_corrected" ]]; then
@@ -58,12 +86,13 @@ for dataset in "${datasets[@]}"; do
 
     if [[ -f "${final_out_file1}" && -f "${final_out_file2}" ]]; then
       echo -e "\t\tfound completed ${mode} predictions for ${dataset}, skipping..."
+    elif slurm_job_active "${job_name}"; then
+      echo -e "\t\t${mode} prediction job already queued or running for ${dataset}, skipping resubmission..."
     else
       echo "Generating predictions for ${dataset} (${mode})"
       echo "Final Output File 1: ${final_out_file1}"
       echo "Final Output File 2: ${final_out_file2}"
 
-      job_name="08-predict_${dataset}_${mode}"
       echo "@ generating ${out_prefix} ${out_key} predictions"
 
       echo "sbatch -J ${job_name} ${JOBSCRIPT} ${dataset}"
@@ -78,7 +107,7 @@ for dataset in "${datasets[@]}"; do
       echo " ${model_fold_3}"
       echo " ${model_fold_4}"
 
-      sbatch -J "${job_name}" "${JOBSCRIPT}" "${dataset}" \
+      sbatch "${predict_sbatch_extra_args[@]}" -J "${job_name}" "./${JOBSCRIPT}" "${dataset}" \
           "${peaks_file}" \
           "${ref_fasta}" \
           "${chromsizes}" \
@@ -94,4 +123,3 @@ for dataset in "${datasets[@]}"; do
     fi
   done
 done
-

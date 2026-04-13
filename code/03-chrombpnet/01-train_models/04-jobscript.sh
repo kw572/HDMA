@@ -1,10 +1,11 @@
 #!/bin/bash
+set -euo pipefail
 #SBATCH --output=../../logs/03-chrombpnet/01/04/%x-%j.out
 #SBATCH -p akundaje,wjg,biochem,sfgf
 #SBATCH --time=2-00:00:00
 #SBATCH -c 1
 #SBATCH --mem=100G
-#SBATCH -G 1
+#SBATCH --gres=gpu:a40:1
 #SBATCH --requeue
 #SBATCH --open-mode=append
 
@@ -16,11 +17,11 @@
 # #SBATCH -p akundaje,owners,gpu
 # #SBATCH --time=2-00:00:00
 
-ref_fasta=${1}
-peaks_file=${2}
-model_file=${3}
-out_prefix=${4}
-chrom_sizes=${5}
+ref_fasta="${1}"
+peaks_file="${2}"
+model_file="${3}"
+out_prefix="${4}"
+chrom_sizes="${5}"
 
 function timestamp {
     # Function to get the current time with the new line character
@@ -39,12 +40,10 @@ module load cudnn/8.1
 
 echo "--- $(timestamp): Beginning interpretation ---"
 
-chrombpnet contribs_bw --genome ${ref_fasta} \
-                                  --regions ${peaks_file} \
-                                  --model-h5 ${model_file} \
-                                  --output-prefix ${out_prefix} \
-                                  --chrom-sizes ${chrom_sizes} \
-				  --profile-or-counts counts
-                                  # --profile-or-counts # defaults to both
+chrombpnet contribs_bw --genome "${ref_fasta}" \
+                                  --regions "${peaks_file}" \
+                                  --model-h5 "${model_file}" \
+                                  --output-prefix "${out_prefix}" \
+                                  --chrom-sizes "${chrom_sizes}"
 
 echo "--- $(timestamp): Completed interpretation ---"

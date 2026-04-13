@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --output=../../logs/03-chrombpnet/01/%x-%j.out
 #SBATCH -p akundaje
-#SBATCH -t 1-0
+#SBATCH -t 2-0
 #SBATCH -c 4
 #SBATCH --mem=60G
-#SBATCH -G 1
+#SBATCH --gres=gpu:a40:1
 
 # Purpose: trains an enzymatic bias model for a specific cluster, with a specific
 # bias-threshold-factor, using the chrombpnet bias pipeline command, following
@@ -42,19 +42,19 @@ module load pango # Dependency for chrombpnet's make_html()
 source ../config.sh
 
 # set parameters
-min_thresh=0.4
-bias_cluster=Heart_c0
-bias_fold="fold_0"
-data_type=ATAC
+min_thresh="${BIAS_MIN_THRESH:-0.4}"
+bias_cluster="${BIAS_CLUSTER:-1-col_aspn_ogna}"
+bias_fold="${BIAS_FOLD:-fold_0}"
+data_type="${DATA_TYPE:-ATAC}"
 
-ref_fasta="${refs}/GRCh38_no_alt_analysis_set_GCA_000001405.15.fasta"
-frag_file=${cluster_frags_dir}/fragments/${bias_cluster}__sorted.tsv
-peaks_file=${chrombpnet_peaks_dir}/${bias_cluster}__peaks_bpnet.narrowPeak
-negatives_file=${negatives_dir}/${bias_cluster}/${bias_fold}/output_negatives.bed
-split_file=${split_dir}/${bias_fold}.json
+ref_fasta="${ref_fasta}"
+frag_file="${cluster_frags_dir}/fragments/${bias_cluster}__sorted.tsv"
+peaks_file="${chrombpnet_peaks_dir}/${bias_cluster}__peaks_bpnet.narrowPeak"
+negatives_file="${negatives_dir}/${bias_cluster}/${bias_fold}/output_negatives.bed"
+split_file="${split_dir}/${bias_fold}.json"
 out_dir="${bias_dir%/}/${bias_cluster}_thresh${min_thresh}/"
 
-mkdir -p ${out_dir}
+mkdir -p "${out_dir}"
 
 
 
@@ -70,13 +70,13 @@ echo "--output-dir ${out_dir}"
 echo "--chrom-sizes ${chromsizes}"
 echo "--data-type ${data_type}"
                                  
-chrombpnet bias pipeline --genome ${ref_fasta} \
-                         --input-fragment-file ${frag_file} \
-                         --peaks ${peaks_file} \
-                         --nonpeaks ${negatives_file} \
-                         --chr-fold-path ${split_file} \
-                         --bias-threshold-factor ${min_thresh} \
-                         --output-dir ${out_dir} \
-                         --chrom-sizes ${chromsizes} \
-                         --data-type ${data_type}
+chrombpnet bias pipeline --genome "${ref_fasta}" \
+                         --input-fragment-file "${frag_file}" \
+                         --peaks "${peaks_file}" \
+                         --nonpeaks "${negatives_file}" \
+                         --chr-fold-path "${split_file}" \
+                         --bias-threshold-factor "${min_thresh}" \
+                         --output-dir "${out_dir}" \
+                         --chrom-sizes "${chromsizes}" \
+                         --data-type "${data_type}"
                                    
