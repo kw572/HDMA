@@ -54,13 +54,16 @@ done
 
 echo "--- $(timestamp): Beginning training ---"
 
-# Sometimes the job starts then goes back to pending (e.g. if preempted), and then
-# when it restarts, chrombpnet qc errors because the interpret_subsample dir is already
-# created. have the jobscript clear the interpret_subsample dir before running
-# chrombpnet qc again just in case
-if [[ -d "${out_dir%/}/auxiliary/interpret_subsample" ]]; then
-    echo "Found existing 'interpret_subsample' dir. Deleting previous subsample data..."
-    rm -rf "${out_dir%/}/auxiliary/interpret_subsample"
+# ChromBPNet creates these directories with exist_ok=False. If a prior run died
+# after partially populating the fold directory, remove the stale stage outputs
+# so reruns can start cleanly without tripping on FileExistsError.
+if [[ ! -f "${out_dir%/}/evaluation/overall_report.html" ]]; then
+    for stale_dir in logs auxiliary models evaluation; do
+        if [[ -d "${out_dir%/}/${stale_dir}" ]]; then
+            echo "Found stale '${stale_dir}' dir from an incomplete run. Removing it before restart..."
+            rm -rf "${out_dir%/}/${stale_dir}"
+        fi
+    done
 fi
 
 
