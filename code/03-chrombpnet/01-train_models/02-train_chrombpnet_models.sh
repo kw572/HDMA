@@ -88,10 +88,13 @@ for dataset in ${datasets}; do
 			JOBSCRIPT="./02-jobscript.sh"
 
 	  		sleep 5s
-	  
-	  		# clean old logs if it exists - echo the command instead of running it.
-	  		if [[ -d "${fold_dir}/logs" ]]; then
-	  			echo "existing logs found under ${fold_dir}; jobscript will clean interpret_subsample if needed"
+
+			# If a prior run left a partial fold directory behind, wipe it before
+			# resubmitting so chrombpnet can recreate its output tree cleanly.
+			if [[ -d "${fold_dir}" ]] && [[ -n "$(find "${fold_dir}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+				echo "existing partial outputs found under ${fold_dir}; removing fold directory before resubmission"
+				rm -rf "${fold_dir}"
+				mkdir -p "${fold_dir}"
 			fi
 
 			echo "Running chrombpnet pipeline"
