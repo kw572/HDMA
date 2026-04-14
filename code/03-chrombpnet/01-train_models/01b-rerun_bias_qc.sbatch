@@ -81,16 +81,33 @@ BIAS_OUT_DIR="${bias_dir%/}/${BIAS_PARAMS}"
 
 BIAS_MODEL="${BIAS_OUT_DIR}/models/bias.h5"
 BIAS_BIGWIG="${BIAS_OUT_DIR}/auxiliary/data_unstranded.bw"
+FRAG_FILE="${cluster_frags_dir}/fragments/${BIAS_CLUSTER}__sorted.tsv"
 PEAKS_FILE="${chrombpnet_peaks_dir}/${BIAS_CLUSTER}__peaks_bpnet.narrowPeak"
 NEGATIVES_FILE="${negatives_dir}/${BIAS_CLUSTER}/${BIAS_FOLD}/output_negatives.bed"
 SPLIT_FILE="${split_dir}/${BIAS_FOLD}.json"
 
-for req in "${BIAS_MODEL}" "${BIAS_BIGWIG}" "${PEAKS_FILE}" "${NEGATIVES_FILE}" "${SPLIT_FILE}"; do
+for req in "${BIAS_MODEL}" "${FRAG_FILE}" "${PEAKS_FILE}" "${NEGATIVES_FILE}" "${SPLIT_FILE}"; do
   if [[ ! -e "${req}" ]]; then
     echo "ERROR: required file missing: ${req}"
     exit 1
   fi
 done
+
+if [[ ! -f "${BIAS_BIGWIG}" ]]; then
+  echo "Bias QC input bigwig is missing; regenerating ${BIAS_BIGWIG} from ${FRAG_FILE}"
+  mkdir -p "${BIAS_OUT_DIR}/auxiliary"
+  READS_TO_BIGWIG=$(python - <<'PY'
+import chrombpnet.helpers.preprocessing.reads_to_bigwig as m
+print(m.__file__)
+PY
+)
+  python "${READS_TO_BIGWIG}" \
+    --genome "${ref_fasta}" \
+    --input-fragment-file "${FRAG_FILE}" \
+    --chrom-sizes "${chromsizes}" \
+    --output-prefix "${BIAS_OUT_DIR}/auxiliary/data" \
+    --data-type "${DATA_TYPE}"
+fi
 
 # Bias QC reruns can fail on stale partial outputs because chrombpnet creates
 # these directories with exist_ok=False.
