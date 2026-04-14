@@ -26,7 +26,28 @@ fi
 
 source ~/.bashrc 2>/dev/null || true
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUN_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
+cd "${RUN_DIR}"
+
+resolve_script_dir() {
+  local candidate
+  for candidate in \
+    "${RUN_DIR}" \
+    "${RUN_DIR}/code/03-chrombpnet/01-train_models" \
+    "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
+  do
+    if [[ -n "${candidate}" && -f "${candidate}/../config.sh" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+SCRIPT_DIR="$(resolve_script_dir)" || {
+  echo "ERROR: could not locate 01-train_models directory from RUN_DIR=${RUN_DIR}"
+  exit 1
+}
 cd "${SCRIPT_DIR}"
 source ../config.sh
 
