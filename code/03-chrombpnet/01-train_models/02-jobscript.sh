@@ -54,9 +54,9 @@ load_requested_modules() {
     done
 }
 
-PRE_MODULES="${PRE_MODULES:-}"
-CUDA_MODULE="${CUDA_MODULE:-cuda/11.2}"
-CUDNN_MODULE="${CUDNN_MODULE:-cudnn/8.1}"
+PRE_MODULES="${PRE_MODULES:-legacy/CentOS7 gcc/8.3.0}"
+CUDA_MODULE="${CUDA_MODULE:-cuda/11.2.0}"
+CUDNN_MODULE="${CUDNN_MODULE:-cudnn/8.1.0.77-11.2}"
 load_requested_modules "${PRE_MODULES}"
 load_optional_module "${CUDA_MODULE}"
 load_optional_module "${CUDNN_MODULE}"

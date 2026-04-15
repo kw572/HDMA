@@ -64,8 +64,19 @@ load_optional_module() {
 eval "$(conda shell.bash hook)"
 conda activate chrombpnet
 
+PRE_MODULES="${PRE_MODULES:-legacy/CentOS7 gcc/8.3.0}"
 CUDA_MODULE="${CUDA_MODULE:-cuda/11.2.0}"
-CUDNN_MODULE="${CUDNN_MODULE:-}"
+CUDNN_MODULE="${CUDNN_MODULE:-cudnn/8.1.0.77-11.2}"
+load_requested_modules() {
+  local modules_string="$1"
+  local mod
+  [[ -n "${modules_string}" ]] || return 0
+  read -r -a modules <<< "${modules_string}"
+  for mod in "${modules[@]}"; do
+    load_optional_module "${mod}"
+  done
+}
+load_requested_modules "${PRE_MODULES}"
 load_optional_module "${CUDA_MODULE}"
 load_optional_module "${CUDNN_MODULE}"
 for mod in system libxml2 libxslt perl zlib ghostscript cairo pango; do
