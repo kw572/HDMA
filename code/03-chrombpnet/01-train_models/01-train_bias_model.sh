@@ -4,7 +4,7 @@
 #SBATCH -t 2-0
 #SBATCH -c 4
 #SBATCH --mem=60G
-#SBATCH --gres=gpu:a40:1
+#SBATCH --gres=gpu:1
 
 # Purpose: trains an enzymatic bias model for a specific cluster, with a specific
 # bias-threshold-factor, using the chrombpnet bias pipeline command, following
@@ -32,9 +32,21 @@ load_optional_module() {
   fi
 }
 
+load_requested_modules() {
+  local modules_string="$1"
+  local mod
+  [[ -n "${modules_string}" ]] || return 0
+  read -r -a modules <<< "${modules_string}"
+  for mod in "${modules[@]}"; do
+    load_optional_module "${mod}"
+  done
+}
+
 # load modules
+PRE_MODULES="${PRE_MODULES:-}"
 CUDA_MODULE="${CUDA_MODULE:-cuda/11.2}"
 CUDNN_MODULE="${CUDNN_MODULE:-cudnn/8.1}"
+load_requested_modules "${PRE_MODULES}"
 load_optional_module "${CUDA_MODULE}"
 load_optional_module "${CUDNN_MODULE}"
 for mod in system libxml2 libxslt perl zlib ghostscript cairo pango; do

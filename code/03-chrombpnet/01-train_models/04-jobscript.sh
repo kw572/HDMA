@@ -4,7 +4,7 @@
 #SBATCH --time=2-00:00:00
 #SBATCH -c 1
 #SBATCH --mem=100G
-#SBATCH --gres=gpu:a40:1
+#SBATCH --gres=gpu:1
 #SBATCH --requeue
 #SBATCH --open-mode=append
 
@@ -46,8 +46,20 @@ load_optional_module() {
     fi
 }
 
+load_requested_modules() {
+    local modules_string="$1"
+    local mod
+    [[ -n "${modules_string}" ]] || return 0
+    read -r -a modules <<< "${modules_string}"
+    for mod in "${modules[@]}"; do
+        load_optional_module "${mod}"
+    done
+}
+
+PRE_MODULES="${PRE_MODULES:-}"
 CUDA_MODULE="${CUDA_MODULE:-cuda/11.2}"
 CUDNN_MODULE="${CUDNN_MODULE:-cudnn/8.1}"
+load_requested_modules "${PRE_MODULES}"
 load_optional_module "${CUDA_MODULE}"
 load_optional_module "${CUDNN_MODULE}"
 
