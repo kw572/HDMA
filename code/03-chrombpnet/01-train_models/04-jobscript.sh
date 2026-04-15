@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --output=../../logs/03-chrombpnet/01/04/%x-%j.out
-#SBATCH -p akundaje,wjg,biochem,sfgf
+#SBATCH --partition=gpu
 #SBATCH --time=2-00:00:00
 #SBATCH -c 1
 #SBATCH --mem=100G
@@ -10,13 +10,8 @@
 
 set -euo pipefail
 
-# NOTE: for jobs that timeout with 2 days,
-# switch, set a longer time limit and submit to akundaje partition only
-# #SBATCH -p akundaje
-# #SBATCH --time=3-00:00:00
-# otherwise:
-# #SBATCH -p akundaje,owners,gpu
-# #SBATCH --time=2-00:00:00
+# NOTE: if this stage needs a longer queue request on HPC,
+# override the partition/time at submit time with `sbatch --partition=... --time=...`.
 
 ref_fasta="${1}"
 peaks_file="${2}"

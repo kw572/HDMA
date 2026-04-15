@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --output=../../logs/03-chrombpnet/01/06/%x-%j.out
-#SBATCH -p akundaje,wjg,biochem,sfgf
+#SBATCH --partition=main
 #SBATCH -t 2-0
 #SBATCH --mem=50G
 #SBATCH -C NO_GPU

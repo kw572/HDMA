@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --output=../../logs/03-chrombpnet/01/08/%x-%j.out
-#SBATCH -p akundaje,owners,gpu,wjg
+#SBATCH --partition=gpu
 #SBATCH -t 2-0
 #SBATCH -c 1
 #SBATCH --mem=40G
