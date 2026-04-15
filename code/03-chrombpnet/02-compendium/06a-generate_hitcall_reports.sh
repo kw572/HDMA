@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=06-generate_report
 #SBATCH --output=../../logs/03-chrombpnet/02/06/%x-%j.out
-#SBATCH --partition=akundaje,wjg,biochem,sfgf
+#SBATCH --partition=main
 #SBATCH --mem-per-cpu=10G
 #SBATCH --cpus-per-task=4
 #SBATCH --time=04:00:00
@@ -53,4 +53,3 @@ for dataset in ${datasets_to_do[@]}; do
    bash 06a-jobscript.sh ${dataset} ${finemo_param1} ${motif_anno} ${anno_drop} ${alpha}
    bash 06a-jobscript.sh ${dataset} ${finemo_param2} ${motif_anno} ${anno_drop} ${alpha}
 done
-

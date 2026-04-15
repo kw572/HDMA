@@ -1,6 +1,6 @@
 #!/usr/bin/bash
 #SBATCH --output=../../logs/03-chrombpnet/02/03/%x-%j.out
-#SBATCH -p akundaje,wjg,biochem,sfgf
+#SBATCH --partition=main
 #SBATCH -t 12:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
@@ -22,8 +22,19 @@ batch=${6}
 eval "$(conda shell.bash hook)"
 conda activate modiscolite
 
-module load system
-module load cairo
+load_optional_module() {
+    local mod="$1"
+    [[ -n "${mod}" ]] || return 0
+    if module -t avail "${mod}" 2>&1 | grep -Fq "${mod}"; then
+        module load "${mod}"
+    else
+        echo "WARNING: module '${mod}' is unavailable; continuing without it."
+    fi
+}
+
+for mod in system cairo; do
+    load_optional_module "${mod}"
+done
 
 echo "-----------------"
 echo "starting"

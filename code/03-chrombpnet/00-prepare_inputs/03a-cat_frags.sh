@@ -2,7 +2,7 @@
 #SBATCH --job-name="03a-cat"
 #SBATCH --time=04:00:00
 #SBATCH --output=../../logs/03-chrombpnet/00/%x-%j.out
-#SBATCH --partition=akundaje,owners
+#SBATCH --partition=main
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=40G
 

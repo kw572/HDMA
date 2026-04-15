@@ -1,6 +1,6 @@
 #!/usr/bin/bash
 #SBATCH --output=../../logs/03-chrombpnet/02/07/%x-%j.out
-#SBATCH -p akundaje
+#SBATCH --partition=main
 #SBATCH -t 96:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=12
@@ -99,4 +99,3 @@ export R_LIBS_USER=$RENV_SJ
 Rscript 07-plot_nucleoatac.R "${out}.occpeaks.bed.gz" ${hits} ${out} "${out}.dyad_binned_distances.tsv"
 	
 echo "@ done."
-

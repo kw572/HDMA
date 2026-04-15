@@ -2,7 +2,7 @@
 #SBATCH --job-name="04b-signal"
 #SBATCH --time=08:00:00
 #SBATCH --output=../../logs/03-chrombpnet/00/%x-%j.out
-#SBATCH --partition=akundaje,wjg,sfgf,biochem
+#SBATCH --partition=main
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=120G
 

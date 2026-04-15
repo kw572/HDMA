@@ -2,7 +2,7 @@
 #SBATCH --job-name="make_splits"
 #SBATCH --time=01:00:00
 #SBATCH --output=../../logs/03-chrombpnet/00/%x-%j.out
-#SBATCH --partition=akundaje
+#SBATCH --partition=main
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=5G
 #SBATCH -C NO_GPU

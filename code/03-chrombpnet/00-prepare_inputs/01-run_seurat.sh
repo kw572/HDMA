@@ -2,7 +2,7 @@
 #SBATCH --job-name="01-frags-rds"
 #SBATCH --time=04:00:00
 #SBATCH --output=../../logs/03-chrombpnet/00/%x-%j.out
-#SBATCH --partition=akundaje
+#SBATCH --partition=main
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=32G
 

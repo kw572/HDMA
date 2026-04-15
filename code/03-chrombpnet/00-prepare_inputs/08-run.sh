@@ -9,7 +9,7 @@
 
 #SBATCH --job-name=08-get_negatives.sh
 #SBATCH --output=../../logs/03-chrombpnet/00/08/%x-%j.out
-#SBATCH --partition=akundaje
+#SBATCH --partition=main
 #SBATCH --mem=20G
 #SBATCH --array=1-1015:5
 #SBATCH -n 5
@@ -26,6 +26,5 @@ done
 # # important to make sure the job doesn't exit before the background tasks are done
 # # https://www.sherlock.stanford.edu/docs/advanced-topics/job-management/#minimizing-the-number-of-jobs-in-queue
 wait
-
 
 

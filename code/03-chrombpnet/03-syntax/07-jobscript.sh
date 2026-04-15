@@ -1,6 +1,6 @@
 #!/usr/bin/bash
 #SBATCH --output=../../logs/03-chrombpnet/03/07/%x-%j.out
-#SBATCH -p akundaje,wjg,sfgf,biochem
+#SBATCH --partition=main
 #SBATCH --time=02:00:00
 #SBATCH -c 1
 #SBATCH --mem=10G

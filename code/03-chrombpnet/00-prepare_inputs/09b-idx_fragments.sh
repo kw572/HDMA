@@ -2,7 +2,7 @@
 #SBATCH --job-name="10b-idx_frags"
 #SBATCH --time=06:00:00
 #SBATCH --output=../../logs/03-chrombpnet/00/%x-%j.out
-#SBATCH --partition=akundaje,wjg,sfgf,biochem
+#SBATCH --partition=main
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=10G
 

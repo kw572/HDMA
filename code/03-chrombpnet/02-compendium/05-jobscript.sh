@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --output=../../logs/03-chrombpnet/02/05/%x-%j.out
-#SBATCH -p akundaje,sfgf,gpu,owners
+#SBATCH --partition=gpu
 #SBATCH -t 24:00:00
 #SBATCH -c 4
 #SBATCH --mem=12G
-#SBATCH -G 1
+#SBATCH --gres=gpu:1
 #SBATCH --requeue
 #SBATCH --open-mode=append
 
@@ -38,9 +38,32 @@ echo -e "\t@ ${motifs_nocompo}"
 eval "$(conda shell.bash hook)"
 conda activate finemo
 
-# load modules
-module load cuda/11.2
-module load cudnn/8.1
+load_optional_module() {
+  local mod="$1"
+  [[ -n "${mod}" ]] || return 0
+  if module -t avail "${mod}" 2>&1 | grep -Fq "${mod}"; then
+    module load "${mod}"
+  else
+    echo "WARNING: module '${mod}' is unavailable; continuing without it."
+  fi
+}
+
+load_requested_modules() {
+  local modules_string="$1"
+  local mod
+  [[ -n "${modules_string}" ]] || return 0
+  read -r -a modules <<< "${modules_string}"
+  for mod in "${modules[@]}"; do
+    load_optional_module "${mod}"
+  done
+}
+
+PRE_MODULES="${PRE_MODULES:-legacy/CentOS7 gcc/8.3.0}"
+CUDA_MODULE="${CUDA_MODULE:-cuda/11.2.0}"
+CUDNN_MODULE="${CUDNN_MODULE:-cudnn/8.1.0.77-11.2}"
+load_requested_modules "${PRE_MODULES}"
+load_optional_module "${CUDA_MODULE}"
+load_optional_module "${CUDNN_MODULE}"
 
 # print version for debugging
 pip freeze | grep finemo

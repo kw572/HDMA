@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --output=../../logs/03-chrombpnet/02/02/%x-%j.out
-#SBATCH -p akundaje,wjg,biochem,sfgf
+#SBATCH --partition=main
 #SBATCH -t 03:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16

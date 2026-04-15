@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=09-run_nucleoatac
 #SBATCH --output=../../logs/03-chrombpnet/02/09/%x-%j.out
-#SBATCH --partition=akundaje,wjg,biochem,sfgf
+#SBATCH --partition=main
 #SBATCH --mem-per-cpu=20G
 #SBATCH --cpus-per-task=1
 #SBATCH --time=06:00:00

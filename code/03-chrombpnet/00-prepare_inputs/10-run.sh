@@ -2,7 +2,7 @@
 #SBATCH --job-name="10-subset_background"
 #SBATCH --time=03:00:00
 #SBATCH --output=../../logs/03-chrombpnet/00/%x-%j.out
-#SBATCH --partition=akundaje,wjg,owners,sfgf,biochem
+#SBATCH --partition=main
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=5G
 
@@ -28,6 +28,11 @@ echo "@ formatting peaks for clusters: ${datasets}"
 
 # DEBUG:
 for dataset in ${datasets}; do
+  peak_file="${chrombpnet_peaks_dir%/}/${dataset}__peaks_bpnet.narrowPeak"
+  if [[ ! -s "${peak_file}" ]]; then
+    echo "@ ${dataset} has no chrombpnet peaks; skipping"
+    continue
+  fi
 
   python 10-subset_backgrounds.py --cluster "${dataset}" --negatives-dir "${negatives_dir}" --output-dir "${negatives_subset_dir}"
   

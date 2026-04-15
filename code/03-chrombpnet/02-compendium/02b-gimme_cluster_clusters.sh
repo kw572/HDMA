@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --output=../../logs/03-chrombpnet/02/02/02b-gimme_cluster_all_%j.out
-#SBATCH -p akundaje,wjg,sfgf,biochem
+#SBATCH --partition=main
 #SBATCH -t 02:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16

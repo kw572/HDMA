@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --output=../../logs/03-chrombpnet/03/04b/%x-%A_%a.out
-#SBATCH -p akundaje,wjg
+#SBATCH --partition=gpu
 #SBATCH --time=12:00:00
 #SBATCH -c 2
 #SBATCH --mem=40G
-#SBATCH -G 1
+#SBATCH --gres=gpu:1
 #SBATCH --requeue
 #SBATCH --open-mode=append
 

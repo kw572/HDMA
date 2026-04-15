@@ -2,7 +2,7 @@
 #SBATCH --job-name="04-peaks"
 #SBATCH --time=24:00:00
 #SBATCH --output=../../logs/03-chrombpnet/00/%x-%j.out
-#SBATCH --partition=akundaje
+#SBATCH --partition=main
 #SBATCH --cpus-per-task=3
 #SBATCH --mem=60G
 
@@ -22,9 +22,13 @@ conda activate chrombpnet
 # source configuration variables
 source ../config.sh
 
+set -euo pipefail
+
 export LC_ALL=C
 export LC_CTYPE=C
 export LANG=C
+mkdir -p "${labcluster_scratch}"
+export TMPDIR="${labcluster_scratch}"
 
 # maximum number of parallel processes to run (Default: 4)
 input_parallel=3
@@ -67,6 +71,7 @@ callpeak () {
 	echo $p2_dir
 	echo $pT_dir
 	echo $out_dir
+	echo $TMPDIR
 
   # call peaks for each pseudorep
 	echo "@@ ${dataset} calling pseudorep1 peaks..." &
@@ -99,9 +104,9 @@ callpeak () {
 
   # get the top 300,000 peaks
 	echo "@@ ${dataset} getting top peaks..."
-    sort -k 8gr,8gr "${p1_in}" | head -n "${npeaks}" | bedtools sort -faidx "${faidx_order}" -i stdin > "${p1_out}"
-    sort -k 8gr,8gr "${p2_in}" | head -n "${npeaks}" | bedtools sort -faidx "${faidx_order}" -i stdin > "${p2_out}"
-    sort -k 8gr,8gr "${pT_in}" | head -n "${npeaks}" | bedtools sort -faidx "${faidx_order}" -i stdin > "${pT_out}"
+    sort -k 8gr,8gr "${p1_in}" | awk -v n="${npeaks}" 'NR<=n {print}' | bedtools sort -faidx "${faidx_order}" -i stdin > "${p1_out}"
+    sort -k 8gr,8gr "${p2_in}" | awk -v n="${npeaks}" 'NR<=n {print}' | bedtools sort -faidx "${faidx_order}" -i stdin > "${p2_out}"
+    sort -k 8gr,8gr "${pT_in}" | awk -v n="${npeaks}" 'NR<=n {print}' | bedtools sort -faidx "${faidx_order}" -i stdin > "${pT_out}"
 
   # only keep peaks from pT which overlap with at least one peak in p1 *and* p2
 	echo "@@ ${dataset} intersecting peaks"

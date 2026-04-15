@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --output=../../logs/03-chrombpnet/03/scratch/%x-%j.out
-#SBATCH -p akundaje,wjg,sfgf,biochem
+#SBATCH --partition=main
 #SBATCH --time=06:00:00
 #SBATCH -c 2
 #SBATCH --mem=16G
@@ -73,4 +73,3 @@ for region_type in ${region_types[@]}; do
   echo "@ done."
  
 done
-

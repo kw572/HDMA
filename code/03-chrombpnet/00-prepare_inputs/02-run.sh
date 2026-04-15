@@ -2,7 +2,7 @@
 #SBATCH --job-name="02-process_frags"
 #SBATCH --time=01:00:00
 #SBATCH --output=../../logs/03-chrombpnet/00/%x-%j.out
-#SBATCH --partition=akundaje
+#SBATCH --partition=main
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=12G
 

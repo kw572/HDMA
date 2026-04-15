@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=12-annotate_hits
 #SBATCH --output=../../logs/03-chrombpnet/00/12/%x-%j.out
-#SBATCH --partition=akundaje,wjg,biochem,sfgf
+#SBATCH --partition=main
 #SBATCH --mem-per-cpu=16G
 #SBATCH --cpus-per-task=6
 #SBATCH --time=01:00:00
@@ -43,6 +43,10 @@ echo "@ Annotating cell types: ${datasets_to_do}"
 for dataset in ${datasets_to_do}; do
   peaks_file="${chrombpnet_peaks_dir%/}/${dataset}__peaks_bpnet.narrowPeak"
   out_tsv="${anno_peaks_dir%/}/${dataset}__peaks_bpnet.annotated.tsv"
+  if [[ ! -s "${peaks_file}" ]]; then
+    echo "@ ${dataset} has no chrombpnet peaks; skipping"
+    continue
+  fi
   echo "@ ${dataset}"
   Rscript 12-annotate_peaks.R "${peaks_file}" "${out_tsv}" "${genome_id}"
 done

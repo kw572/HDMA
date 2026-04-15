@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=06b-reconcile_hits
 #SBATCH --output=../../logs/03-chrombpnet/02/06/%x-%j.out
-#SBATCH --partition=akundaje,wjg,biochem,sfgf
+#SBATCH --partition=main
 #SBATCH --mem-per-cpu=16G
 #SBATCH --cpus-per-task=6
 #SBATCH --time=04:00:00
