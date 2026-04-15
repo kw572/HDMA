@@ -92,6 +92,9 @@ BIAS_OUT_DIR="${bias_dir%/}/${BIAS_PARAMS}"
 
 BIAS_MODEL="${BIAS_OUT_DIR}/models/bias.h5"
 BIAS_BIGWIG="${BIAS_OUT_DIR}/auxiliary/data_unstranded.bw"
+TMP_ROOT="${TMPDIR:-/tmp}"
+QC_BIGWIG_PREFIX="${TMP_ROOT%/}/bias_qc_${SLURM_JOB_ID:-$$}"
+QC_BIGWIG="${QC_BIGWIG_PREFIX}.bw"
 FRAG_FILE="${cluster_frags_dir}/fragments/${BIAS_CLUSTER}__sorted.tsv"
 PEAKS_FILE="${chrombpnet_peaks_dir}/${BIAS_CLUSTER}__peaks_bpnet.narrowPeak"
 NEGATIVES_FILE="${negatives_dir}/${BIAS_CLUSTER}/${BIAS_FOLD}/output_negatives.bed"
@@ -106,7 +109,7 @@ done
 
 if [[ ! -f "${BIAS_BIGWIG}" ]]; then
   echo "Bias QC input bigwig is missing; regenerating ${BIAS_BIGWIG} from ${FRAG_FILE}"
-  mkdir -p "${BIAS_OUT_DIR}/auxiliary"
+  mkdir -p "${TMP_ROOT}"
   READS_TO_BIGWIG=$(python - <<'PY'
 import chrombpnet.helpers.preprocessing.reads_to_bigwig as m
 print(m.__file__)
@@ -116,19 +119,21 @@ PY
     --genome "${ref_fasta}" \
     --input-fragment-file "${FRAG_FILE}" \
     --chrom-sizes "${chromsizes}" \
-    --output-prefix "${BIAS_OUT_DIR}/auxiliary/data" \
+    --output-prefix "${QC_BIGWIG_PREFIX}" \
     --data-type "${DATA_TYPE}"
+else
+  cp "${BIAS_BIGWIG}" "${QC_BIGWIG}"
 fi
 
 # Bias QC reruns can fail on stale partial outputs because chrombpnet creates
 # these directories with exist_ok=False.
 rm -rf \
-  "${BIAS_OUT_DIR}/auxiliary/interpret_subsample" \
+  "${BIAS_OUT_DIR}/auxiliary" \
   "${BIAS_OUT_DIR}/evaluation/modisco_profile" \
   "${BIAS_OUT_DIR}/evaluation/modisco_counts"
 
 echo "Running chrombpnet bias qc"
-echo "--bigwig ${BIAS_BIGWIG}"
+echo "--bigwig ${QC_BIGWIG}"
 echo "--bias-model ${BIAS_MODEL}"
 echo "--genome ${ref_fasta}"
 echo "--chrom-sizes ${chromsizes}"
@@ -139,7 +144,7 @@ echo "--nonpeaks ${NEGATIVES_FILE}"
 echo "--chr-fold-path ${SPLIT_FILE}"
 
 chrombpnet bias qc \
-  --bigwig "${BIAS_BIGWIG}" \
+  --bigwig "${QC_BIGWIG}" \
   --bias-model "${BIAS_MODEL}" \
   --genome "${ref_fasta}" \
   --chrom-sizes "${chromsizes}" \
