@@ -106,6 +106,21 @@ count_lines <- function(path) {
   as.numeric(str_split(trimws(system2("wc", c("-l", path), stdout = TRUE)), "\\s+")[[1]][1])
 }
 
+count_unique_barcodes <- function(path) {
+  as.numeric(
+    str_split(
+      trimws(
+        system2(
+          "bash",
+          c("-lc", sprintf("cut -f4 %s | sort -u | wc -l", shQuote(path))),
+          stdout = TRUE
+        )
+      ),
+      "\\s+"
+    )[[1]][1]
+  )
+}
+
 frag_dir <- file.path(work_dir, "00-inputs/cluster_fragments/fragments")
 frag_files <- fs::dir_ls(frag_dir, regexp = "__sorted\\.tsv$", type = "file")
 
@@ -116,7 +131,7 @@ cluster_meta <- tibble(
   organ = "local_run",
   cluster_id = seq_along(frag_files),
   dend_order = seq_along(frag_files),
-  ncell = NA_real_,
+  ncell = map_dbl(frag_files, count_unique_barcodes),
   total_frags = map_dbl(frag_files, count_lines)
 ) %>%
   arrange(cluster_id)
