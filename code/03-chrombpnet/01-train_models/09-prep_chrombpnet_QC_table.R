@@ -2,16 +2,21 @@
 # table for the manuscript.
 
 library(here)
+script_path <- normalizePath(commandArgs(trailingOnly = FALSE), winslash = "/", mustWork = FALSE)
+script_file <- sub("^--file=", "", script_path[grepl("^--file=", script_path)])
+if (length(script_file) == 0) {
+  script_file <- file.path(getwd(), "code/03-chrombpnet/01-train_models/09-prep_chrombpnet_QC_table.R")
+}
+source(file.path(dirname(normalizePath(script_file[1], winslash = "/", mustWork = FALSE)), "../config.sh"))
 library(dplyr)
 library(tidyr)
 library(readr)
 library(glue)
 library(purrr)
 
-hdma_path   <- here::here()
-out         <- here("output/03-chrombpnet/01-models/qc")
+out         <- file.path(base_dir, "01-models/qc")
 
-dir.create(out, showWarnings = FALSE)
+dir.create(out, showWarnings = FALSE, recursive = TRUE)
 
 # load outs
 all_metrics <- read_tsv(file.path(out, "chrombpnet_metrics.tsv"))
@@ -31,5 +36,3 @@ all_metrics <- all_metrics %>%
 
 all_metrics %>%
   write_tsv(glue("{out}/TABLE_chrombpnet_qc_metrics.tsv"))
-
-sum(all_metrics$Pass_QC) == 189*5

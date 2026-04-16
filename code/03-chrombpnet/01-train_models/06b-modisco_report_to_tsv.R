@@ -2,6 +2,12 @@
 # to TSV for easy parsing and re-use later.
 
 library(here)
+script_path <- normalizePath(commandArgs(trailingOnly = FALSE), winslash = "/", mustWork = FALSE)
+script_file <- sub("^--file=", "", script_path[grepl("^--file=", script_path)])
+if (length(script_file) == 0) {
+  script_file <- file.path(getwd(), "code/03-chrombpnet/01-train_models/06b-modisco_report_to_tsv.R")
+}
+source(file.path(dirname(normalizePath(script_file[1], winslash = "/", mustWork = FALSE)), "../config.sh"))
 library(dplyr)
 library(tidyr)
 library(ggplot2)
@@ -13,12 +19,12 @@ library(stringr)
 library(rvest) # for parsing modisco HTML reports
 library(universalmotif) # for working with motifs
 
-hdma_path   <- here::here()
-bias_params <- "bias_Heart_c0_thresh0.4"
-out         <- file.path(hdma_path, "output/03-chrombpnet/01-models/modisco_tsv")
-modisco_dir <- file.path(hdma_path, "output/03-chrombpnet/01-models/modisco")
+bias_params <- Sys.getenv("BIAS_PARAMS", unset = "1-col_aspn_ogna_thresh0.4")
+work_dir    <- base_dir
+out         <- file.path(work_dir, "01-models/modisco_tsv")
+modisco_dir <- file.path(work_dir, "01-models/modisco", glue("bias_{bias_params}"))
 
-dir.create(out, showWarnings = FALSE)
+dir.create(out, showWarnings = FALSE, recursive = TRUE)
 
 #' Convert the motifs.html output from modisco to a TSV, adding the name of the
 #' model ("Cluster") as well as the model head used for interpretation ("Model_head")
@@ -30,11 +36,11 @@ modisco_report_to_tsv <- function(key, model_head = "counts") {
   message("@ ", key)
   
   modisco_report <- rvest::read_html(glue(
-    "{modisco_dir}/{bias_params}/{key}/{model_head}_modisco_report/motifs.html"))
+    "{modisco_dir}/{key}/{model_head}_modisco_report/motifs.html"))
   
   # read in MEME format (only for pos patterns though)
   meme <- universalmotif::read_meme(glue(
-    "{modisco_dir}/{bias_params}/{key}/{key}_memedb.{model_head}.txt"))
+    "{modisco_dir}/{key}/{key}_memedb.{model_head}.txt"))
   
   # get consensus sequences using universal motif
   meme_df <- data.frame(pattern = map_chr(meme, ~ glue('{key}__pos_patterns.{.x["name"]}')),
@@ -58,11 +64,17 @@ modisco_report_to_tsv <- function(key, model_head = "counts") {
   
 }
 
-chrombpnet_models_keep <- read_tsv(file.path(hdma_path, "output/03-chrombpnet/01-models/qc/chrombpnet_models_keep.tsv"),
-                                   col_names = c("Cluster", "Folds_keep", "Cluster_ID"))
-length(unique(chrombpnet_models_keep$Cluster))
+models_keep_path <- file.path(work_dir, "01-models/qc/chrombpnet_models_keep.tsv")
+if (file.exists(models_keep_path)) {
+  chrombpnet_models_keep <- read_tsv(models_keep_path,
+                                     col_names = c("Cluster", "Folds_keep", "Cluster_ID"))
+  datasets <- unique(chrombpnet_models_keep$Cluster)
+} else {
+  datasets <- fs::dir_ls(modisco_dir, type = "directory", recurse = FALSE) %>%
+    basename()
+}
 
-counts_modisco_reports <- map_dfr(chrombpnet_models_keep$Cluster, ~ modisco_report_to_tsv(.x))
+counts_modisco_reports <- map_dfr(datasets, ~ modisco_report_to_tsv(.x))
 
 write_tsv(counts_modisco_reports, glue("{out}/all_modisco_report.motifs.counts.tsv"))
 

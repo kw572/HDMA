@@ -3,6 +3,12 @@
 # cell types with <1M fragments. Therefore, we remove those from our models-to-keep file.
 
 library(here)
+script_path <- normalizePath(commandArgs(trailingOnly = FALSE), winslash = "/", mustWork = FALSE)
+script_file <- sub("^--file=", "", script_path[grepl("^--file=", script_path)])
+if (length(script_file) == 0) {
+  script_file <- file.path(getwd(), "code/03-chrombpnet/01-train_models/06c-post_modisco_qc.R")
+}
+source(file.path(dirname(normalizePath(script_file[1], winslash = "/", mustWork = FALSE)), "../config.sh"))
 library(dplyr)
 library(tidyr)
 library(ggplot2)
@@ -14,39 +20,20 @@ library(stringr)
 library(rvest) # for parsing modisco HTML reports
 library(universalmotif) # for working with motifs
 
-hdma_path   <- here::here()
-bias_params <- "bias_Heart_c0_thresh0.4"
-out         <- here("output/03-chrombpnet/01-models/qc")
+bias_params <- Sys.getenv("BIAS_PARAMS", unset = "1-col_aspn_ogna_thresh0.4")
+out         <- file.path(base_dir, "01-models/qc")
+dir.create(out, showWarnings = FALSE, recursive = TRUE)
 
 chrombpnet_models_keep <- read_tsv(file.path(out, "chrombpnet_models_keep.tsv"),
                                    col_names = c("Cluster", "Folds_keep", "Cluster_ID"))
 length(unique(chrombpnet_models_keep$Cluster))
 
-models_rm_post_modisco <- c("Adrenal_c4", "Adrenal_c5", "Adrenal_c6", "Eye_c19", "Eye_c20" ,"Thymus_c16", "Thyroid_c8", "Thyroid_c10", "Thyroid_c11", "Thyroid_c9")
+models_rm_post_modisco <- Sys.getenv("MODELS_RM_POST_MODISCO", unset = "") %>%
+  str_split(",") %>%
+  .[[1]] %>%
+  trimws() %>%
+  discard(~ .x == "")
 
-n_frags <- read_tsv(here("output/01-preprocessing/03/fragmentsPerCluster.tsv")) %>% 
-  dplyr::rename(total_frags = total_reads)
-
-cluster_meta <- read_csv(here("output/05-misc/03/TableS2_cluster_meta_qc.csv")) %>% 
-  left_join(n_frags, by = c("Cluster" = "RNA_Clusters"))
-
-# check # frags
-cluster_meta %>% filter(Cluster_ChromBPNet %in% models_rm_post_modisco) %>% dplyr::select(Cluster_ChromBPNet, ncell, total_frags) %>% arrange(desc(total_frags))
-# # A tibble: 10 × 3
-# Cluster_chrombpnet ncell total_frags
-# <chr>              <dbl>       <dbl>
-#   1 Eye_c19              519     3611353
-# 2 Eye_c20              329     2798813
-# 3 Thyroid_c8           200     1932991
-# 4 Thymus_c16            98     1333100
-# 5 Adrenal_c4           155      991281
-# 6 Adrenal_c5           115      747083
-# 7 Thyroid_c10          104      733861
-# 8 Thyroid_c9           118      681542
-# 9 Adrenal_c6            89      526401
-# 10 Thyroid_c11           38      227150
-
-# 189 models remaining
 length(setdiff(chrombpnet_models_keep$Cluster, models_rm_post_modisco))
 
 chrombpnet_models_keep %>% 
