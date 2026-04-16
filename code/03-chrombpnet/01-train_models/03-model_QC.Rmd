@@ -255,7 +255,10 @@ summary(all_metrics$profile_metrics.peaks.median_jsd)
 ```{r chrombpnet_qc_metrics_barplots, fig.width = 30, fig.height = 15}
 
 cluster_meta <- cluster_meta %>% 
-  mutate(Cluster_ChromBPNet = factor(Cluster_ChromBPNet, levels = sorted_cluster_order))
+  mutate(
+    Cluster_ChromBPNet = factor(Cluster_ChromBPNet, levels = sorted_cluster_order),
+    ncell_plot = ifelse(is.finite(ncell) & ncell > 0, ncell, NA_real_)
+  )
 
 all_metrics_avg <- all_metrics %>% 
   group_by(Cluster_ChromBPNet, Cluster, dend_order, organ) %>% 
@@ -280,18 +283,26 @@ p1 <- cluster_meta %>%
   xlab(NULL) + ylab("Total # fragments") +
   ggtitle("ChromBPNet model performance")
 
-p2 <- cluster_meta %>% 
-  ggplot(aes(x = Cluster_ChromBPNet, y = ncell)) +
-  geom_bar(aes(fill = organ), stat = "identity") +
-  scale_fill_manual(values = cmap_organ) +
-  # put the scale on a log10 scale, but use non-logged numbers
-  scale_y_log10(label = comma) +
-  facet_grid(. ~ organ, scales = "free_x", space = "free") +
-  rotate_x() + no_legend() +
-  theme(axis.text.x = element_blank(),
-        strip.text.x = element_blank(),
-        panel.grid.major.y = element_line(color = "gray90")) +
-  xlab(NULL) + ylab("# cells")
+if (all(is.na(cluster_meta$ncell_plot))) {
+  p2 <- ggplot() +
+    annotate("text", x = 0, y = 0, label = "Cell counts unavailable for local-run inputs", size = 5) +
+    xlim(-1, 1) + ylim(-1, 1) +
+    theme_void() +
+    ggtitle("Cells per cluster")
+} else {
+  p2 <- cluster_meta %>% 
+    ggplot(aes(x = Cluster_ChromBPNet, y = ncell_plot)) +
+    geom_bar(aes(fill = organ), stat = "identity") +
+    scale_fill_manual(values = cmap_organ) +
+    # put the scale on a log10 scale, but use non-logged numbers
+    scale_y_log10(label = comma) +
+    facet_grid(. ~ organ, scales = "free_x", space = "free") +
+    rotate_x() + no_legend() +
+    theme(axis.text.x = element_blank(),
+          strip.text.x = element_blank(),
+          panel.grid.major.y = element_line(color = "gray90")) +
+    xlab(NULL) + ylab("# cells")
+}
 
 p3 <- all_metrics_avg %>% 
   mutate(Cluster_ChromBPNet = factor(Cluster_ChromBPNet, levels = sorted_cluster_order)) %>% 
