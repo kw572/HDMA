@@ -82,6 +82,36 @@ calculate contribution scores, generate model predictions, and perform motif dis
 - `08`: predict accessibility in peak regions across folds, and average the predictions (bias-corrected) to generate bw
 - `09`: prepare supplementary table with ChromBPNet performance and QC metrics
 
+### Notes on interpretation outputs
+
+- `02` training via `chrombpnet pipeline` already runs a built-in interpretation/QC pass.
+- That training-time interpretation uses a peak subsample when there are more than `30,000` peaks, writing files under `auxiliary/interpret_subsample/`.
+- `04` and beyond are still needed because they generate the final downstream interpretation products:
+  - per-fold contribution exports on the provided peak set
+  - averaged SHAPs across kept folds
+  - final MoDISco runs on averaged fold outputs
+  - final browser bigwigs and averaged predictions
+- In other words, training-time SHAP/MoDISco is mainly for fold-level QC, while `04+` produces the dataset-level outputs used for downstream analysis.
+
+### USC CARC notes
+
+These are the current assumptions for running the ChromBPNet shell / sbatch workflow on USC CARC.
+
+- Current config-driven local run paths use `code/03-chrombpnet/data/local_run_chr/work`, as defined in `config.sh`.
+- GPU jobs now default to `--partition=gpu`; CPU helper jobs default to `--partition=main`.
+- GPU request defaults use generic `--gres=gpu:1` rather than model-specific `gpu:a40:1`.
+- The current default GPU module stack in the active training scripts is:
+  - `PRE_MODULES='legacy/CentOS7 gcc/8.3.0'`
+  - `CUDA_MODULE='cuda/11.2.0'`
+  - `CUDNN_MODULE='cudnn/8.1.0.77-11.2'`
+- On this cluster, the wrapper job itself may need a shorter submit-time override than the child jobs. A safe pattern has been:
+  - `sbatch --time=12:00:00 00-run_all_training.sbatch`
+- To limit a run to selected datasets, pass `CHROMBPNET_DATASET_FILTER_REGEX`, for example:
+  - `sbatch --time=12:00:00 --export=ALL,CHROMBPNET_DATASET_FILTER_REGEX='^6-' 00-run_all_training.sbatch`
+- The training/downstream submitters now avoid duplicate resubmission by checking for matching active SLURM job names.
+- Incomplete fold reruns are cleaned automatically before resubmission if the fold is not already queued/running.
+- The wrapper and downstream QC scripts now follow `config.sh` / `base_dir` instead of older hardcoded `data/local_run/work` paths.
+- `03-model_QC.Rmd` now reconstructs cluster-level cell counts from unique barcodes in `cluster_fragments/fragments/*__sorted.tsv` when running the local workflow, so reruns do not depend on the broader manuscript metadata table.
 
 
 
@@ -127,4 +157,3 @@ This produces one MoDISco h5 object per supercluster, containing merged, non-red
 
 
 _**NOTE**_: variant scoring using ChromBPNet models is done in the `code/06-variants` directory.
-
