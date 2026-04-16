@@ -20,8 +20,10 @@ output:
 library(here)
 proj_dir    <- here()
 doc_id      <- "03"
-out         <- here("output/03-chrombpnet/01-models/qc"); dir.create(out, recursive = TRUE)
-figout      <- here("figures/03-chrombpnet/01-models", doc_id, "/"); dir.create(figout, recursive = TRUE)
+work_dir    <- here("code/03-chrombpnet/data/local_run/work")
+out         <- file.path(work_dir, "01-models/qc"); dir.create(out, recursive = TRUE, showWarnings = FALSE)
+figout      <- file.path(out, "figures", doc_id, "/"); dir.create(figout, recursive = TRUE, showWarnings = FALSE)
+bias_model  <- Sys.getenv("BIAS_PARAMS", unset = "1-col_aspn_ogna_thresh0.4")
 
 ```
 
@@ -82,6 +84,13 @@ source(file.path(script_path, "plotting_config.R"))
 source(file.path(script_path, "hdma_palettes.R"))
 source(file.path(script_path, "sj_scRNAseq_helpers.R"))
 
+if (!exists("cmap_organ")) {
+  cmap_organ <- c(local_run = "#3953A4")
+}
+if (!("local_run" %in% names(cmap_organ))) {
+  cmap_organ <- c(cmap_organ, local_run = "#3953A4")
+}
+
 ggplot2::theme_set(theme_min())
 
 ```
@@ -93,18 +102,24 @@ Load general cluster info (number of fragments, number of cells):
 
 ```{r}
 
-# get number of cells
-cluster_meta <- read_csv(here("output/05-misc/03/TableS2_cluster_meta_qc.csv"))
+count_lines <- function(path) {
+  as.numeric(str_split(trimws(system2("wc", c("-l", path), stdout = TRUE)), "\\s+")[[1]][1])
+}
 
-# get number of fragments
-n_frags <- read_tsv(here("output/01-preprocessing/03/fragmentsPerCluster.tsv")) %>% 
-  dplyr::rename(total_frags = total_reads)
+frag_dir <- file.path(work_dir, "00-inputs/cluster_fragments/fragments")
+frag_files <- fs::dir_ls(frag_dir, regexp = "__sorted\\.tsv$", type = "file")
 
-# put these together
-cluster_meta <- cluster_meta %>% 
-  left_join(n_frags, by = c("Cluster" = "RNA_Clusters")) %>% 
-  # in the ChromBPNet analyses, StomachEsophagus is referred to as Stomach
-  mutate(organ = ifelse(organ == "StomachEsophagus", "Stomach", organ))
+cluster_meta <- tibble(
+  Cluster_ChromBPNet = basename(frag_files) %>% str_remove("__sorted\\.tsv$"),
+  Cluster = Cluster_ChromBPNet,
+  L1_annot = Cluster_ChromBPNet,
+  organ = "local_run",
+  cluster_id = seq_along(frag_files),
+  dend_order = seq_along(frag_files),
+  ncell = NA_real_,
+  total_frags = map_dbl(frag_files, count_lines)
+) %>%
+  arrange(cluster_id)
 
 sorted_cluster_order <- cluster_meta %>% arrange(organ, cluster_id) %>% pull(Cluster_ChromBPNet)
 
@@ -115,15 +130,14 @@ Then, we load the various ChromBPNet QC metrics:
 
 ```{r load}
 
-bias_model <- "Heart_c0_thresh0.4"
-model_dir  <- here("output/03-chrombpnet/01-models/models/", paste0("bias_", bias_model))
+model_dir  <- file.path(work_dir, "01-models", paste0("bias_", bias_model))
 fs::dir_exists(model_dir)
 
 metrics    <- fs::dir_ls(model_dir, glob = "*/*/evaluation/chrombpnet_metrics.json", recurse = TRUE, type = "file")
 
 # extract out cell type and fold from the path
-clusters   <- stringr::str_split(metrics, "/") %>% sapply(getElement, 14)
-folds      <- stringr::str_split(metrics, "/") %>% sapply(getElement, 15)
+clusters   <- dirname(dirname(dirname(metrics))) %>% basename()
+folds      <- dirname(dirname(metrics)) %>% basename()
 
 # load the response of the bias model
 bias_resp  <- fs::dir_ls(model_dir, glob = "*/*/evaluation/chrombpnet_nobias_max_bias_response.txt",
@@ -143,8 +157,8 @@ read_bias <- function(response_file) {
   data.frame("tn5_motif" = paste0("tn5_motif_", 1:5),
              "response" = responses) %>% 
     pivot_wider(names_from = "tn5_motif", values_from = "response") %>% 
-    mutate(Cluster = response_file %>% str_split("/") %>% .[[1]] %>% getElement(14),
-           Fold = response_file %>% str_split("/") %>% .[[1]] %>% getElement(15))
+    mutate(Cluster = basename(dirname(dirname(dirname(response_file)))),
+           Fold = basename(dirname(dirname(response_file))))
   
 }
 
@@ -158,6 +172,7 @@ Put all metrics together:
 ```{r}
 
 all_metrics <- right_join(cluster_meta, chrombpnet_metrics, by = c("Cluster_ChromBPNet" = "Cluster")) %>% 
+  mutate(Cluster = Cluster_ChromBPNet) %>% 
   left_join(bias_metrics, by = c("Cluster_ChromBPNet" = "Cluster", "Fold" = "Fold")) %>% 
   mutate(Model = paste0(Cluster_ChromBPNet, "_", Fold)) %>% 
   dplyr::relocate(Model, .before = 1) %>% 
@@ -174,10 +189,10 @@ Sanity checks:
 
 ```{r}
 
-n_clusters <- 203
+n_clusters <- nrow(cluster_meta)
 length(unique(all_metrics$Model)) == 5 * n_clusters
 length(unique(all_metrics$Cluster)) == n_clusters
-length(unique(all_metrics$organ)) == 12
+length(unique(all_metrics$organ))
 
 ```
 
@@ -212,7 +227,7 @@ nrow(models_to_keep)
 
 ```
 
-Thus, at this stage, we're keeping 199 models.
+Thus, at this stage, we're keeping `r nrow(models_to_keep)` models.
 
 Prepare supplementary table:
 
@@ -402,4 +417,3 @@ plot_grid(p1, p2, p3, nrow = 1)
 sessionInfo()
 
 ```
-
