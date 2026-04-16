@@ -89,8 +89,9 @@ activate_r() {
   else
     local renv_file
     for renv_file in \
-      "${SCRIPT_DIR}/../../SJ_RENV_DIR.txt" \
-      "${RUN_DIR}/SJ_RENV_DIR.txt"
+      "${SCRIPT_DIR}/../../../SJ_RENV_DIR.txt" \
+      "${RUN_DIR}/SJ_RENV_DIR.txt" \
+      "${RUN_DIR}/../../../SJ_RENV_DIR.txt"
     do
       if [[ -f "${renv_file}" ]]; then
         export R_LIBS_USER
