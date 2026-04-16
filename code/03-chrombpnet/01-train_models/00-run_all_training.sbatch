@@ -221,7 +221,7 @@ wait_for_count \
 
 echo "[$(timestamp)] Step 03: model QC"
 activate_r
-BIAS_PARAMS="${BIAS_PARAMS}" Rscript -e "rmarkdown::render('03-model_QC.Rmd')"
+BIAS_PARAMS="${BIAS_PARAMS}" CHROMBPNET_WORK_DIR="${base_dir}" Rscript -e "rmarkdown::render('03-model_QC.Rmd')"
 
 echo "[$(timestamp)] Step 04: contribution scores submit"
 activate_chrombpnet

@@ -20,7 +20,7 @@ output:
 library(here)
 proj_dir    <- here()
 doc_id      <- "03"
-work_dir    <- here("code/03-chrombpnet/data/local_run/work")
+work_dir    <- Sys.getenv("CHROMBPNET_WORK_DIR", unset = here("code/03-chrombpnet/data/local_run_chr/work"))
 out         <- file.path(work_dir, "01-models/qc"); dir.create(out, recursive = TRUE, showWarnings = FALSE)
 figout      <- file.path(out, "figures", doc_id, "/"); dir.create(figout, recursive = TRUE, showWarnings = FALSE)
 bias_model  <- Sys.getenv("BIAS_PARAMS", unset = "1-col_aspn_ogna_thresh0.4")
