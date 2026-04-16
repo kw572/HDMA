@@ -82,9 +82,27 @@ activate_modiscolite() {
 activate_r() {
   module purge >/dev/null 2>&1 || true
   module load "${R_MODULE}"
+  if [[ -n "${R_LIBS_USER:-}" ]]; then
+    :
+  elif [[ -n "${RENV_SJ:-}" ]]; then
+    export R_LIBS_USER="${RENV_SJ}"
+  else
+    local renv_file
+    for renv_file in \
+      "${SCRIPT_DIR}/../../SJ_RENV_DIR.txt" \
+      "${RUN_DIR}/SJ_RENV_DIR.txt"
+    do
+      if [[ -f "${renv_file}" ]]; then
+        export R_LIBS_USER
+        IFS= read -r R_LIBS_USER < "${renv_file}"
+        break
+      fi
+    done
+  fi
   export OPENBLAS_NUM_THREADS=1
   export OMP_NUM_THREADS=1
   export MKL_NUM_THREADS=1
+  echo "[$(timestamp)] R_LIBS_USER=${R_LIBS_USER:-<unset>}"
 }
 
 assert_file_exists() {
