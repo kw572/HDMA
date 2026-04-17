@@ -4,8 +4,6 @@
 #SBATCH -t 06:00:00
 #SBATCH -c 1
 #SBATCH --mem=60G
-#SBATCH -C NO_GPU
-
 set -euo pipefail
 
 # load conda environment

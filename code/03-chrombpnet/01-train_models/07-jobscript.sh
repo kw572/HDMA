@@ -4,8 +4,6 @@
 #SBATCH -t 01:00:00
 #SBATCH -c 4
 #SBATCH --mem=20G
-#SBATCH -C NO_GPU
-
 set -euo pipefail
 
 celltype="${1}"

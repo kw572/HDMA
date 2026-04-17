@@ -5,8 +5,6 @@
 #SBATCH --partition=main
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=5G
-#SBATCH -C NO_GPU
-
 # This file creates the ChromBPNet chromosomal folds files specifying train/test/validation
 # folds, using the splits in https://zenodo.org/records/7445373
 

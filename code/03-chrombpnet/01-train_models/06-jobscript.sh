@@ -3,7 +3,6 @@
 #SBATCH --partition=main
 #SBATCH -t 2-0
 #SBATCH --mem=50G
-#SBATCH -C NO_GPU
 #SBATCH --cpus-per-task=12
 
 set -euo pipefail
