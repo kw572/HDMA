@@ -62,6 +62,7 @@ R_MODULE="${R_MODULE:-rstats/4.5.1}"
 POLL_SECONDS="${POLL_SECONDS:-60}"
 DATASET_FILTER_REGEX="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
 BIAS_SBATCH_ARGS="${BIAS_SBATCH_ARGS:---partition=gpu}"
+FORCE_QC="${CHROMBPNET_FORCE_QC:-0}"
 
 mkdir -p Log
 
@@ -220,8 +221,13 @@ wait_for_count \
   "find '${models_dir%/}/bias_${BIAS_PARAMS}' -path '*/evaluation/overall_report.html' -type f | wc -l"
 
 echo "[$(timestamp)] Step 03: model QC"
-activate_r
-BIAS_PARAMS="${BIAS_PARAMS}" CHROMBPNET_WORK_DIR="${base_dir}" Rscript -e "rmarkdown::render('03-model_QC.Rmd')"
+QC_HTML="${SCRIPT_DIR}/03-model_QC.html"
+if [[ "${FORCE_QC}" != "1" && -f "${qc_dir%/}/chrombpnet_metrics.tsv" && -f "${chrombpnet_models_keep}" && -f "${QC_HTML}" ]]; then
+  echo "[$(timestamp)] QC outputs already present, skipping rerender of 03-model_QC.Rmd."
+else
+  activate_r
+  BIAS_PARAMS="${BIAS_PARAMS}" CHROMBPNET_WORK_DIR="${base_dir}" Rscript -e "rmarkdown::render('03-model_QC.Rmd')"
+fi
 
 echo "[$(timestamp)] Step 04: contribution scores submit"
 activate_chrombpnet
