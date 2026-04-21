@@ -177,16 +177,92 @@ if [[ "${prepared_negatives_file}" != "${negatives_file}" ]]; then
 fi
 
 
-chrombpnet pipeline \
-        --input-fragment-file "${frag_file}" \
-        --genome "${ref_fasta}" \
-        --chrom-sizes "${chromsizes}" \
-        --peaks "${peaks_file}" \
-        --nonpeaks "${prepared_negatives_file}" \
-        --chr-fold-path "${split_file}" \
-        --bias-model-path "${bias_model}" \
-        --output-dir "${out_dir}" \
-        --data-type "${data_type}"
+python - "${frag_file}" "${ref_fasta}" "${chromsizes}" "${peaks_file}" "${prepared_negatives_file}" "${split_file}" "${bias_model}" "${out_dir}" "${data_type}" <<'PY'
+import sys
+
+from chrombpnet import CHROMBPNET
+from chrombpnet.training.data_generators import initializers
+
+orig_fetch = initializers.fetch_data_and_model_params_based_on_mode
+
+
+def patched_fetch(mode, args, parameters, nonpeak_regions, peak_regions):
+    if mode != "valid" or nonpeak_regions is None or peak_regions is None:
+        return orig_fetch(mode, args, parameters, nonpeak_regions, peak_regions)
+
+    inputlen = int(parameters["inputlen"])
+    outputlen = int(parameters["outputlen"])
+    requested = int(float(parameters["negative_sampling_ratio"]) * peak_regions.shape[0])
+    available = nonpeak_regions.shape[0]
+    sample_n = min(requested, available)
+
+    if sample_n < requested:
+        print(
+            f"Validation negatives capped from {requested} to {sample_n} "
+            f"for split '{mode}' because only {available} are available after filtering."
+        )
+
+    nonpeak_regions = nonpeak_regions.sample(
+        n=sample_n,
+        replace=False,
+        random_state=args.seed,
+    )
+
+    negative_sampling_ratio = 1.0
+    max_jitter = 0
+    add_revcomp = False
+    shuffle_at_epoch_start = False
+
+    return (
+        inputlen,
+        outputlen,
+        nonpeak_regions,
+        negative_sampling_ratio,
+        max_jitter,
+        add_revcomp,
+        shuffle_at_epoch_start,
+    )
+
+
+initializers.fetch_data_and_model_params_based_on_mode = patched_fetch
+
+(
+    frag_file,
+    ref_fasta,
+    chromsizes,
+    peaks_file,
+    prepared_negatives_file,
+    split_file,
+    bias_model,
+    out_dir,
+    data_type,
+) = sys.argv[1:]
+
+sys.argv = [
+    "chrombpnet",
+    "pipeline",
+    "--input-fragment-file",
+    frag_file,
+    "--genome",
+    ref_fasta,
+    "--chrom-sizes",
+    chromsizes,
+    "--peaks",
+    peaks_file,
+    "--nonpeaks",
+    prepared_negatives_file,
+    "--chr-fold-path",
+    split_file,
+    "--bias-model-path",
+    bias_model,
+    "--output-dir",
+    out_dir,
+    "--data-type",
+    data_type,
+]
+
+CHROMBPNET.main()
+PY
         
 
 echo "--- $(timestamp): Completed training ---"
