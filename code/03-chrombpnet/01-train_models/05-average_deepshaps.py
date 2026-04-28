@@ -19,10 +19,11 @@ avg_shap = None
 
 # split folds into a list
 folds = folds.split(",")
+n_folds = len(folds)
 
 # loop over folds
 for fold in folds:
-	print(f"\{fold}")
+	print(f"\t{fold}")
 	fold_dir = f"{base_dir}/{fold}"
 	
 	# load shap scores
@@ -40,8 +41,8 @@ for fold in folds:
 		
 # divide by 5 to average over folds
 print("\taveraging...")
-avg_projected_shap /= 5
-avg_shap /= 5
+avg_projected_shap /= n_folds
+avg_shap /= n_folds
 
 print("\tsaving...")
 deepshap_output = {"projected_shap": {"seq": avg_projected_shap},

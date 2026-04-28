@@ -115,7 +115,7 @@ def main(args):
     # subset regions
     if args.debug_chr is not None:
         regions_df = regions_df[regions_df['chr'].isin(args.debug_chr)]
-        regions = [x for x in regions if x[0]==args.debug_chr]
+        regions = [x for x in regions if x[0] in args.debug_chr]
     regions_df[regions_used].to_csv(args.output_prefix + "_chrombpnet_" + args.output_key + "_preds.bed", sep="\t", header=False, index=False)
 
     # get predictions

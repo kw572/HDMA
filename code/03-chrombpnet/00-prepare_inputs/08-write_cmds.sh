@@ -41,6 +41,10 @@ for cluster in ${datasets}; do
   echo "${cluster}"
     
   peak_file="${chrombpnet_peaks_dir}/${cluster}__peaks_bpnet.narrowPeak"
+  if [[ ! -s "${peak_file}" ]]; then
+    echo "${cluster} has no chrombpnet peaks; skipping"
+    continue
+  fi
   
   cluster_dir="${negatives_dir%/}/${cluster}"
   [[ -d "${cluster_dir}" ]] || mkdir -p "${cluster_dir}"
