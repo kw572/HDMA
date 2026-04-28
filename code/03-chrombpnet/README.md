@@ -112,6 +112,7 @@ These are the current assumptions for running the ChromBPNet shell / sbatch work
 - Incomplete fold reruns are cleaned automatically before resubmission if the fold is not already queued/running.
 - The wrapper and downstream QC scripts now follow `config.sh` / `base_dir` instead of older hardcoded `data/local_run/work` paths.
 - `03-model_QC.Rmd` now reconstructs cluster-level cell counts from unique barcodes in `cluster_fragments/fragments/*__sorted.tsv` when running the local workflow, so reruns do not depend on the broader manuscript metadata table.
+- If `06` finished `counts_modisco_output.h5` but failed during `modisco report` or `modisco meme`, use `06-rerun_report_and_meme.sbatch` to repair those outputs without recomputing MoDISco motifs. It respects `BIAS_PARAMS`, `MEME_DB`, and optional `CHROMBPNET_DATASET_FILTER_REGEX`.
 
 
 
