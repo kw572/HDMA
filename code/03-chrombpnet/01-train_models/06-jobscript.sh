@@ -36,7 +36,7 @@ for mod in system libxml2 libxslt perl zlib ghostscript cairo; do
     load_optional_module "${mod}"
 done
 
-export PATH="$HOME/meme/bin:$HOME/meme/libexec/meme-5.5.5:$PATH"
+export PATH="$HOME/.conda/envs/chrombpnet/bin:$HOME/meme/bin:$HOME/meme/libexec/meme-5.5.5:$PATH"
 
 echo "[$(date +"%m/%d/%Y (%r)")] running modisco motifs..."
 modisco motifs -i "${peak_shaps}" -n "${max_seqlets}" -l "${num_leiden}" -o "${modisco_output}"
