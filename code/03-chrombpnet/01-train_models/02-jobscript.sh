@@ -8,10 +8,7 @@
 #SBATCH --requeue
 #SBATCH --open-mode=append
 
-set -euo pipefail
-
-
-# PARSE ARGUMENTS --------------------------------------------------------------
+set -eo pipefail
 
 frag_file="${1}"
 ref_fasta="${2}"
@@ -23,46 +20,39 @@ bias_model="${7}"
 out_dir="${8}"
 data_type="${9}"
 
-function timestamp {
-    # Function to get the current time with the new line character removed 
-    
-    # current time
+timestamp() {
     date +"%Y-%m-%d_%H-%M-%S" | tr -d '\n'
 }
 
-# load conda environment
+export LANG=C
+export LC_ALL=C
+
+set +u
+source /etc/profile
+
+module purge
+module load legacy/CentOS7
+module load gcc/8.3.0
+module load cuda/11.2.0
+module load cudnn/8.1.0.77-11.2-cuda
+
+# optional graphics deps
+module load cairo || true
+module load pango || true
+
 eval "$(conda shell.bash hook)"
 conda activate chrombpnet
+set -u
 
-load_optional_module() {
-    local mod="$1"
-    [[ -n "${mod}" ]] || return 0
-    if module -t avail "${mod}" 2>&1 | grep -Fq "${mod}"; then
-        module load "${mod}"
-    else
-        echo "WARNING: module '${mod}' is unavailable; continuing without it."
-    fi
-}
+echo "=== NVIDIA ==="
+nvidia-smi
 
-load_requested_modules() {
-    local modules_string="$1"
-    local mod
-    [[ -n "${modules_string}" ]] || return 0
-    read -r -a modules <<< "${modules_string}"
-    for mod in "${modules[@]}"; do
-        load_optional_module "${mod}"
-    done
-}
-
-PRE_MODULES="${PRE_MODULES:-legacy/CentOS7 gcc/8.3.0}"
-CUDA_MODULE="${CUDA_MODULE:-cuda/11.2.0}"
-CUDNN_MODULE="${CUDNN_MODULE:-cudnn/8.1.0.77-11.2}"
-load_requested_modules "${PRE_MODULES}"
-load_optional_module "${CUDA_MODULE}"
-load_optional_module "${CUDNN_MODULE}"
-for mod in system cairo pango; do
-    load_optional_module "${mod}"
-done
+echo "=== TENSORFLOW GPU CHECK ==="
+python - <<'EOF'
+import tensorflow as tf
+print("TF version:", tf.__version__)
+print("GPUs:", tf.config.list_physical_devices('GPU'))
+EOF
 
 echo "--- $(timestamp): Beginning training ---"
 

@@ -62,7 +62,7 @@ source ../config.sh
 
 # set parameters
 min_thresh="${BIAS_MIN_THRESH:-0.4}"
-bias_cluster="${BIAS_CLUSTER:-1-col_aspn_ogna}"
+bias_cluster="${BIAS_CLUSTER:-1_Jaw_Hyoid__peaks_bpnet}"
 bias_fold="${BIAS_FOLD:-fold_0}"
 data_type="${DATA_TYPE:-ATAC}"
 

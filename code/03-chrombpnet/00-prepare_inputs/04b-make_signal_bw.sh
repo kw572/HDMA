@@ -20,8 +20,8 @@
 
 # load conda environment and modules
 eval "$(conda shell.bash hook)"
-conda activate chrombpnet
-module load biology bedtools samtools
+conda activate chrombpnet_tmp
+
 
 # source configuration variables
 source ../config.sh

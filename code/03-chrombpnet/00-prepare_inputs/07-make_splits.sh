@@ -15,7 +15,7 @@ conda activate chrombpnet
 # get configuration variables
 source ../config.sh
 
-chrombpnet_bin="${CHROMBPNET_BIN:-/opt/miniconda3/envs/chrombpnet/bin/chrombpnet}"
+chrombpnet_bin="${CHROMBPNET_BIN:-/home1/kuangtse/.conda/envs/chrombpnet/bin/chrombpnet}"
 
 chroms=()
 while IFS= read -r chrom; do

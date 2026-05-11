@@ -2,16 +2,13 @@
 #SBATCH --output=../../logs/03-chrombpnet/01/04/%x-%j.out
 #SBATCH --partition=gpu
 #SBATCH --time=2-00:00:00
-#SBATCH -c 1
+#SBATCH -c 8
 #SBATCH --mem=100G
 #SBATCH --gres=gpu:1
 #SBATCH --requeue
 #SBATCH --open-mode=append
 
-set -euo pipefail
-
-# NOTE: if this stage needs a longer queue request on HPC,
-# override the partition/time at submit time with `sbatch --partition=... --time=...`.
+set -eo pipefail
 
 ref_fasta="${1}"
 peaks_file="${2}"
@@ -19,51 +16,43 @@ model_file="${3}"
 out_prefix="${4}"
 chrom_sizes="${5}"
 
-function timestamp {
-    # Function to get the current time with the new line character
-    # removed 
-    
-    # current time
+timestamp() {
     date +"%Y-%m-%d_%H-%M-%S" | tr -d '\n'
 }
 
-# load conda environment
+export LANG=C
+export LC_ALL=C
+set +u
+source /etc/profile
+
+module purge
+module load legacy/CentOS7
+module load gcc/8.3.0
+module load cuda/11.2.0
+module load cudnn/8.1.0.77-11.2-cuda
+
 eval "$(conda shell.bash hook)"
 conda activate chrombpnet
+set -u
 
-load_optional_module() {
-    local mod="$1"
-    [[ -n "${mod}" ]] || return 0
-    if module -t avail "${mod}" 2>&1 | grep -Fq "${mod}"; then
-        module load "${mod}"
-    else
-        echo "WARNING: module '${mod}' is unavailable; continuing without it."
-    fi
-}
 
-load_requested_modules() {
-    local modules_string="$1"
-    local mod
-    [[ -n "${modules_string}" ]] || return 0
-    read -r -a modules <<< "${modules_string}"
-    for mod in "${modules[@]}"; do
-        load_optional_module "${mod}"
-    done
-}
+echo "=== NVIDIA ==="
+nvidia-smi
 
-PRE_MODULES="${PRE_MODULES:-legacy/CentOS7 gcc/8.3.0}"
-CUDA_MODULE="${CUDA_MODULE:-cuda/11.2.0}"
-CUDNN_MODULE="${CUDNN_MODULE:-cudnn/8.1.0.77-11.2}"
-load_requested_modules "${PRE_MODULES}"
-load_optional_module "${CUDA_MODULE}"
-load_optional_module "${CUDNN_MODULE}"
+echo "=== TENSORFLOW GPU CHECK ==="
+python - <<'EOF'
+import tensorflow as tf
+print("TF version:", tf.__version__)
+print("GPUs:", tf.config.list_physical_devices('GPU'))
+EOF
 
 echo "--- $(timestamp): Beginning interpretation ---"
 
-chrombpnet contribs_bw --genome "${ref_fasta}" \
-                                  --regions "${peaks_file}" \
-                                  --model-h5 "${model_file}" \
-                                  --output-prefix "${out_prefix}" \
-                                  --chrom-sizes "${chrom_sizes}"
+chrombpnet contribs_bw \
+    --genome "${ref_fasta}" \
+    --regions "${peaks_file}" \
+    --model-h5 "${model_file}" \
+    --output-prefix "${out_prefix}" \
+    --chrom-sizes "${chrom_sizes}"
 
 echo "--- $(timestamp): Completed interpretation ---"

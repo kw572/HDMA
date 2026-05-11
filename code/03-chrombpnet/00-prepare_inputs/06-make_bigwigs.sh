@@ -10,13 +10,13 @@
 
 # load conda environment
 eval "$(conda shell.bash hook)"
-conda activate chrombpnet
+conda activate chrombpnet_tmp
 
 # source configuration variables
 source ../config.sh
 
 input_parallel=6
-export out_dir="${bigwigs_scratch%/}"
+export out_dir="."
 export script_loc="${chrombpnet_code}/chrombpnet/helpers/preprocessing/reads_to_bigwig.py"
 export fasta_file="${ref_fasta}"
 export cluster_frags_dir="${cluster_frags_dir%/}"

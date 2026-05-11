@@ -15,7 +15,7 @@
 #SBATCH -n 5
 #SBATCH --time=02:00:00
 
-cmdfile="08-commands.sh"
+cmdfile="08-write_cmds.sh"
 
 for i in {0..4}; do
 	id=$((SLURM_ARRAY_TASK_ID+i))

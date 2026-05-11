@@ -83,7 +83,7 @@ for mod in system libxml2 libxslt perl zlib ghostscript cairo pango; do
   load_optional_module "${mod}"
 done
 
-BIAS_CLUSTER="${BIAS_CLUSTER:-1-col_aspn_ogna}"
+BIAS_CLUSTER="${BIAS_CLUSTER:-1_Jaw_Hyoid}"
 BIAS_MIN_THRESH="${BIAS_MIN_THRESH:-0.4}"
 BIAS_FOLD="${BIAS_FOLD:-fold_0}"
 DATA_TYPE="${DATA_TYPE:-ATAC}"

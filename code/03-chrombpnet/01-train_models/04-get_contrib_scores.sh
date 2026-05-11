@@ -11,7 +11,7 @@ set -euo pipefail
 source ../config.sh
 
 # set bias model
-bias_params="${BIAS_PARAMS:-1-col_aspn_ogna_thresh0.4}"
+bias_params="${BIAS_PARAMS:-1_Jaw_Hyoid_thresh0.4}"
 
 # set parameters
 ref_fasta="${ref_fasta}"
