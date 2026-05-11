@@ -63,6 +63,10 @@ POLL_SECONDS="${POLL_SECONDS:-60}"
 DATASET_FILTER_REGEX="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
 BIAS_SBATCH_ARGS="${BIAS_SBATCH_ARGS:---partition=gpu}"
 FORCE_QC="${CHROMBPNET_FORCE_QC:-0}"
+NUM_FOLDS="${chrombpnet_train_num_folds}"
+DOWNSTREAM_FOLD_LIMIT=5
+EFFECTIVE_FOLDS=$(( NUM_FOLDS < DOWNSTREAM_FOLD_LIMIT ? NUM_FOLDS : DOWNSTREAM_FOLD_LIMIT ))
+QC_STAMP_FILE="${qc_dir%/}/.chrombpnet_qc_bias_params"
 
 mkdir -p Log
 
@@ -117,16 +121,7 @@ assert_file_exists() {
 }
 
 dataset_count_all() {
-  find "${chrombpnet_peaks_dir}" -maxdepth 1 -type f -name '*__peaks_bpnet.narrowPeak' ! -name '._*' -print |
-    while IFS= read -r path; do
-      basename "${path}" __peaks_bpnet.narrowPeak
-    done |
-    if [[ -n "${DATASET_FILTER_REGEX}" ]]; then
-      grep -E "${DATASET_FILTER_REGEX}" || true
-    else
-      cat
-    fi |
-    awk 'NF {count++} END {print count+0}'
+  list_target_datasets | awk 'NF {count++} END {print count+0}'
 }
 
 dataset_count_keep() {
@@ -153,6 +148,125 @@ dataset_count_keep2() {
   fi
 }
 
+list_target_datasets() {
+  find "${chrombpnet_peaks_dir}" -maxdepth 1 -type f -name '*__peaks_bpnet.narrowPeak' ! -name '._*' -print |
+    while IFS= read -r path; do
+      basename "${path}" __peaks_bpnet.narrowPeak
+    done |
+    sort -u |
+    if [[ -n "${DATASET_FILTER_REGEX}" ]]; then
+      grep -E "${DATASET_FILTER_REGEX}" || true
+    else
+      cat
+    fi
+}
+
+dataset_has_completed_fold() {
+  local dataset="$1"
+  local fold
+  for ((fold = 0; fold < EFFECTIVE_FOLDS; fold++)); do
+    if [[ -f "${models_dir%/}/bias_${BIAS_PARAMS}/${dataset}/fold_${fold}/evaluation/overall_report.html" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+count_completed_training_folds() {
+  local dataset
+  local fold
+  local count=0
+  while IFS= read -r dataset; do
+    [[ -n "${dataset}" ]] || continue
+    for ((fold = 0; fold < EFFECTIVE_FOLDS; fold++)); do
+      if [[ -f "${models_dir%/}/bias_${BIAS_PARAMS}/${dataset}/fold_${fold}/evaluation/overall_report.html" ]]; then
+        count=$((count + 1))
+      fi
+    done
+  done < <(list_target_datasets)
+  printf '%s\n' "${count}"
+}
+
+count_datasets_with_completed_training() {
+  local dataset
+  local count=0
+  while IFS= read -r dataset; do
+    [[ -n "${dataset}" ]] || continue
+    if dataset_has_completed_fold "${dataset}"; then
+      count=$((count + 1))
+    fi
+  done < <(list_target_datasets)
+  printf '%s\n' "${count}"
+}
+
+count_active_training_jobs() {
+  local names_file
+  names_file="$(mktemp)"
+  local dataset
+  local fold
+  while IFS= read -r dataset; do
+    [[ -n "${dataset}" ]] || continue
+    for ((fold = 0; fold < NUM_FOLDS; fold++)); do
+      printf '02-train_%s_fold_%s\n' "${dataset}" "${fold}" >> "${names_file}"
+    done
+  done < <(list_target_datasets)
+
+  if [[ ! -s "${names_file}" ]]; then
+    rm -f "${names_file}"
+    printf '0\n'
+    return 0
+  fi
+
+  squeue -h -u "${USER}" -o "%j" 2>/dev/null |
+    awk 'NR==FNR {wanted[$0]=1; next} wanted[$0] {count++} END {print count+0}' "${names_file}" -
+  rm -f "${names_file}"
+}
+
+count_completed_contrib_exports() {
+  local suffix="$1"
+  local dataset
+  local fold
+  local count=0
+  while IFS= read -r dataset; do
+    [[ -n "${dataset}" ]] || continue
+    for ((fold = 0; fold < EFFECTIVE_FOLDS; fold++)); do
+      if [[ -f "${models_dir%/}/bias_${BIAS_PARAMS}/${dataset}/fold_${fold}/evaluation/overall_report.html" ]] && \
+         [[ -f "${contribs_dir%/}/bias_${BIAS_PARAMS}/${dataset}/fold_${fold}/${suffix}" ]]; then
+        count=$((count + 1))
+      fi
+    done
+  done < <(list_target_datasets)
+  printf '%s\n' "${count}"
+}
+
+count_dataset_level_outputs() {
+  local base_dir="$1"
+  local suffix="$2"
+  local dataset
+  local count=0
+  while IFS= read -r dataset; do
+    [[ -n "${dataset}" ]] || continue
+    if [[ -f "${base_dir%/}/${dataset}/${suffix}" ]]; then
+      count=$((count + 1))
+    fi
+  done < <(list_target_datasets)
+  printf '%s\n' "${count}"
+}
+
+count_prediction_outputs() {
+  local mode_dir="$1"
+  local suffix="$2"
+  local dataset
+  local count=0
+  while IFS= read -r dataset; do
+    [[ -n "${dataset}" ]] || continue
+    if [[ -f "${mode_dir%/}/${dataset}_avg_${suffix}" ]]; then
+      count=$((count + 1))
+    fi
+  done < <(list_target_datasets)
+  printf '%s\n' "${count}"
+}
+
 wait_for_count() {
   local label="$1"
   local expected="$2"
@@ -163,6 +277,21 @@ wait_for_count() {
     current=$(printf '%s' "${current}" | tail -n 1 | tr -d '[:space:]')
     echo "[$(timestamp)] ${label}: ${current}/${expected}"
     if [[ "${current}" == "${expected}" ]]; then
+      break
+    fi
+    sleep "${POLL_SECONDS}"
+  done
+}
+
+wait_for_zero() {
+  local label="$1"
+  local cmd="$2"
+  local current
+  while true; do
+    current=$(eval "$cmd")
+    current=$(printf '%s' "${current}" | tail -n 1 | tr -d '[:space:]')
+    echo "[$(timestamp)] ${label}: ${current}"
+    if [[ "${current}" == "0" ]]; then
       break
     fi
     sleep "${POLL_SECONDS}"
@@ -185,14 +314,15 @@ assert_file_exists "Chrom sizes" "${chromsizes}"
 assert_file_exists "MEME database" "${MEME_DB}"
 
 TOTAL_DATASETS=$(dataset_count_all)
-EXPECTED_FOLDS=$(( TOTAL_DATASETS * 5 ))
+TARGET_FOLDS=$(( TOTAL_DATASETS * NUM_FOLDS ))
+TARGET_DOWNSTREAM_FOLDS=$(( TOTAL_DATASETS * EFFECTIVE_FOLDS ))
 
 if [[ "${TOTAL_DATASETS}" -eq 0 ]]; then
   echo "[$(timestamp)] ERROR: no ChromBPNet peak files found in ${chrombpnet_peaks_dir}"
   exit 1
 fi
 
-echo "[$(timestamp)] Found ${TOTAL_DATASETS} datasets and ${EXPECTED_FOLDS} expected fold jobs."
+echo "[$(timestamp)] Found ${TOTAL_DATASETS} datasets, ${NUM_FOLDS} configured folds, ${TARGET_FOLDS} target fold jobs, and ${EFFECTIVE_FOLDS} downstream folds per dataset."
 
 echo "[$(timestamp)] Step 01: bias model"
 if [[ -f "${bias_dir%/}/${BIAS_PARAMS}/models/bias.h5" ]]; then
@@ -215,18 +345,28 @@ echo "[$(timestamp)] Step 02: ChromBPNet model training submit"
 activate_chrombpnet
 BIAS_PARAMS="${BIAS_PARAMS}" DATA_TYPE="${DATA_TYPE}" bash 02-train_chrombpnet_models.sh
 
-wait_for_count \
-  "Completed model evaluations" \
-  "${EXPECTED_FOLDS}" \
-  "find '${models_dir%/}/bias_${BIAS_PARAMS}' -path '*/evaluation/overall_report.html' -type f | wc -l"
+wait_for_zero \
+  "Active training jobs" \
+  "count_active_training_jobs"
+
+COMPLETED_FOLDS=$(count_completed_training_folds)
+COMPLETED_DATASETS=$(count_datasets_with_completed_training)
+echo "[$(timestamp)] Completed downstream-usable training folds: ${COMPLETED_FOLDS}/${TARGET_DOWNSTREAM_FOLDS}"
+echo "[$(timestamp)] Datasets with at least one completed fold: ${COMPLETED_DATASETS}/${TOTAL_DATASETS}"
+
+if [[ "${COMPLETED_FOLDS}" -eq 0 ]]; then
+  echo "[$(timestamp)] ERROR: no completed training folds were found under ${models_dir%/}/bias_${BIAS_PARAMS}"
+  exit 1
+fi
 
 echo "[$(timestamp)] Step 03: model QC"
 QC_HTML="${SCRIPT_DIR}/03-model_QC.html"
-if [[ "${FORCE_QC}" != "1" && -f "${qc_dir%/}/chrombpnet_metrics.tsv" && -f "${chrombpnet_models_keep}" && -f "${QC_HTML}" ]]; then
+if [[ "${FORCE_QC}" != "1" && -f "${qc_dir%/}/chrombpnet_metrics.tsv" && -f "${chrombpnet_models_keep}" && -f "${QC_HTML}" && -f "${QC_STAMP_FILE}" && "$(cat "${QC_STAMP_FILE}")" == "${BIAS_PARAMS}" ]]; then
   echo "[$(timestamp)] QC outputs already present, skipping rerender of 03-model_QC.Rmd."
 else
   activate_r
   BIAS_PARAMS="${BIAS_PARAMS}" CHROMBPNET_WORK_DIR="${base_dir}" Rscript -e "rmarkdown::render('03-model_QC.Rmd')"
+  printf '%s\n' "${BIAS_PARAMS}" > "${QC_STAMP_FILE}"
 fi
 
 echo "[$(timestamp)] Step 04: contribution scores submit"
@@ -235,13 +375,13 @@ BIAS_PARAMS="${BIAS_PARAMS}" bash 04-get_contrib_scores.sh
 
 wait_for_count \
   "Completed fold contribution exports" \
-  "${EXPECTED_FOLDS}" \
-  "find '${contribs_dir%/}/bias_${BIAS_PARAMS}' -path '*/peaks_shap.counts_scores.bw' -type f | wc -l"
+  "${COMPLETED_FOLDS}" \
+  "count_completed_contrib_exports 'peaks_shap.counts_scores.bw'"
 
 wait_for_count \
   "Completed fold profile exports" \
-  "${EXPECTED_FOLDS}" \
-  "find '${contribs_dir%/}/bias_${BIAS_PARAMS}' -path '*/peaks_shap.profile_scores.bw' -type f | wc -l"
+  "${COMPLETED_FOLDS}" \
+  "count_completed_contrib_exports 'peaks_shap.profile_scores.bw'"
 
 echo "[$(timestamp)] Step 05: fold-average DeepSHAP submit"
 activate_chrombpnet
@@ -251,12 +391,12 @@ QC_DATASETS=$(dataset_count_keep)
 wait_for_count \
   "Average counts shaps" \
   "${QC_DATASETS}" \
-  "find '${contribs_dir%/}/bias_${BIAS_PARAMS}' -mindepth 2 -maxdepth 2 -name 'average_shaps.counts.h5' -type f | wc -l"
+  "count_dataset_level_outputs '${contribs_dir%/}/bias_${BIAS_PARAMS}' 'average_shaps.counts.h5'"
 
 wait_for_count \
   "Average profile shaps" \
   "${QC_DATASETS}" \
-  "find '${contribs_dir%/}/bias_${BIAS_PARAMS}' -mindepth 2 -maxdepth 2 -name 'average_shaps.profile.h5' -type f | wc -l"
+  "count_dataset_level_outputs '${contribs_dir%/}/bias_${BIAS_PARAMS}' 'average_shaps.profile.h5'"
 
 echo "[$(timestamp)] Step 06: MoDISco submit"
 activate_modiscolite
@@ -265,12 +405,12 @@ BIAS_PARAMS="${BIAS_PARAMS}" MEME_DB="${MEME_DB}" bash 06-modisco.sh
 wait_for_count \
   "MoDISco outputs" \
   "${QC_DATASETS}" \
-  "find '${modisco_dir%/}/bias_${BIAS_PARAMS}' -mindepth 2 -maxdepth 2 -name 'counts_modisco_output.h5' -type f | wc -l"
+  "count_dataset_level_outputs '${modisco_dir%/}/bias_${BIAS_PARAMS}' 'counts_modisco_output.h5'"
 
 wait_for_count \
   "MoDISco reports" \
   "${QC_DATASETS}" \
-  "find '${modisco_dir%/}/bias_${BIAS_PARAMS}' -path '*/counts_modisco_report/motifs.html' -type f | wc -l"
+  "count_dataset_level_outputs '${modisco_dir%/}/bias_${BIAS_PARAMS}' 'counts_modisco_report/motifs.html'"
 
 echo "[$(timestamp)] Step 06b/06c: post-MoDISco R summaries"
 activate_r
@@ -286,12 +426,12 @@ BIAS_PARAMS="${BIAS_PARAMS}" bash 07-make_contrib_bw.sh
 wait_for_count \
   "Average counts contribution bigwigs" \
   "${QC2_DATASETS}" \
-  "find '${contribs_dir%/}/bias_${BIAS_PARAMS}' -mindepth 2 -maxdepth 2 -name 'average_shaps.counts.bw' -type f | wc -l"
+  "count_dataset_level_outputs '${contribs_dir%/}/bias_${BIAS_PARAMS}' 'average_shaps.counts.bw'"
 
 wait_for_count \
   "Average profile contribution bigwigs" \
   "${QC2_DATASETS}" \
-  "find '${contribs_dir%/}/bias_${BIAS_PARAMS}' -mindepth 2 -maxdepth 2 -name 'average_shaps.profile.bw' -type f | wc -l"
+  "count_dataset_level_outputs '${contribs_dir%/}/bias_${BIAS_PARAMS}' 'average_shaps.profile.bw'"
 
 echo "[$(timestamp)] Step 08: predictions submit"
 activate_chrombpnet
@@ -300,12 +440,12 @@ BIAS_PARAMS="${BIAS_PARAMS}" bash 08-generate_predictions.sh
 wait_for_count \
   "Bias-corrected prediction bigwigs" \
   "${QC2_DATASETS}" \
-  "find '${preds_dir%/}/bias_corrected' -maxdepth 1 -name '*_chrombpnet_nobias.bw' -type f | wc -l"
+  "count_prediction_outputs '${preds_dir%/}/bias_${BIAS_PARAMS}/bias_corrected' 'chrombpnet_nobias.bw'"
 
 wait_for_count \
   "Uncorrected prediction bigwigs" \
   "${QC2_DATASETS}" \
-  "find '${preds_dir%/}/uncorrected' -maxdepth 1 -name '*_chrombpnet_uncorrected.bw' -type f | wc -l"
+  "count_prediction_outputs '${preds_dir%/}/bias_${BIAS_PARAMS}/uncorrected' 'chrombpnet_uncorrected.bw'"
 
 echo "[$(timestamp)] Step 09: final QC table"
 activate_r

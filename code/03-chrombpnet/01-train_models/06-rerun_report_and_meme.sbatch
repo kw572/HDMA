@@ -52,7 +52,7 @@ cd "$SCRIPT_DIR"
 
 source "$SCRIPT_DIR/../config.sh"
 
-BIAS_PARAMS="${BIAS_PARAMS:-1-col_aspn_ogna_thresh0.4}"
+BIAS_PARAMS="${BIAS_PARAMS:-${chrombpnet_bias_params}}"
 MEME_DB="${MEME_DB:-${refs}/JASPAR_CORE_2016_vertebrates.meme}"
 DATASET_FILTER_REGEX="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
 REGENERATE_REPORT="${REGENERATE_REPORT:-0}"

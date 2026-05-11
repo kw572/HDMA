@@ -16,24 +16,22 @@ ref_fasta="${3}"
 chrom_sizes="${4}"
 out_prefix="${5}"
 out_key="${6}"
-model_fold_0="${7}"
-model_fold_1="${8}"
-model_fold_2="${9}"
-model_fold_3="${10}"
-model_fold_4="${11}"
+shift 6
+model_paths=("$@")
 predict_batch_size="${PREDICT_BATCH_SIZE:-16}"
 
-echo "celltype=${1}"
-echo "peaks_file=${2}"
-echo "ref_fasta=${3}"
-echo "chrom_sizes=${4}"
-echo "out_prefix=${5}"
-echo "out_key=${6}"
-echo "model_fold_0=${7}"
-echo "model_fold_1=${8}"
-echo "model_fold_2=${9}"
-echo "model_fold_3=${10}"
-echo "model_fold_4=${11}"
+echo "celltype=${celltype}"
+echo "peaks_file=${peaks_file}"
+echo "ref_fasta=${ref_fasta}"
+echo "chrom_sizes=${chrom_sizes}"
+echo "out_prefix=${out_prefix}"
+echo "out_key=${out_key}"
+printf 'model_paths=%s\n' "${model_paths[*]}"
+
+if [[ "${#model_paths[@]}" -eq 0 ]]; then
+  echo "No model paths were provided."
+  exit 1
+fi
 
 
 # source configuration variables
@@ -75,17 +73,21 @@ done
 
 echo "[$(date +"%m/%d/%Y (%r)")] starting ${celltype}"
 
-python ./08-predict_and_avg.py --regions "${peaks_file}" \
-  --genome "${ref_fasta}" \
-  --chrom-sizes "${chrom_sizes}" \
-  --output-prefix "${out_prefix}" \
-  --output-key "${out_key}" \
-  --output-bed True \
-  --batch-size "${predict_batch_size}" \
-  --chrombpnet-model "${model_fold_0}" \
-  --chrombpnet-model "${model_fold_1}" \
-  --chrombpnet-model "${model_fold_2}" \
-  --chrombpnet-model "${model_fold_3}" \
-  --chrombpnet-model "${model_fold_4}"
+predict_cmd=(
+  python ./08-predict_and_avg.py
+  --regions "${peaks_file}"
+  --genome "${ref_fasta}"
+  --chrom-sizes "${chrom_sizes}"
+  --output-prefix "${out_prefix}"
+  --output-key "${out_key}"
+  --output-bed True
+  --batch-size "${predict_batch_size}"
+)
+
+for model_path in "${model_paths[@]}"; do
+  predict_cmd+=(--chrombpnet-model "${model_path}")
+done
+
+"${predict_cmd[@]}"
 
 echo "[$(date +"%m/%d/%Y (%r)")] done!"

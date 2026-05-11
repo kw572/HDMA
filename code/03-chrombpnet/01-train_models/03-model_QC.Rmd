@@ -23,7 +23,18 @@ doc_id      <- "03"
 work_dir    <- Sys.getenv("CHROMBPNET_WORK_DIR", unset = here("code/03-chrombpnet/data/local_run_chr/work"))
 out         <- file.path(work_dir, "01-models/qc"); dir.create(out, recursive = TRUE, showWarnings = FALSE)
 figout      <- file.path(out, "figures", doc_id, "/"); dir.create(figout, recursive = TRUE, showWarnings = FALSE)
-bias_model  <- Sys.getenv("BIAS_PARAMS", unset = "1-col_aspn_ogna_thresh0.4")
+resolve_bias_params <- function() {
+  bias_params <- Sys.getenv("BIAS_PARAMS", unset = "")
+  if (nzchar(bias_params)) {
+    return(bias_params)
+  }
+
+  script_dir <- file.path(proj_dir, "code/03-chrombpnet/01-train_models")
+  config_path <- file.path(script_dir, "../config.sh")
+  cmd <- sprintf("source %s >/dev/null 2>&1 && printf '%%s' \"$chrombpnet_bias_params\"", shQuote(config_path))
+  trimws(system2("bash", c("-lc", cmd), stdout = TRUE))
+}
+bias_model  <- resolve_bias_params()
 
 ```
 
@@ -205,7 +216,8 @@ Sanity checks:
 ```{r}
 
 n_clusters <- nrow(cluster_meta)
-length(unique(all_metrics$Model)) == 5 * n_clusters
+n_completed_models <- length(unique(all_metrics$Model))
+n_completed_models <= 5 * n_clusters
 length(unique(all_metrics$Cluster)) == n_clusters
 length(unique(all_metrics$organ))
 

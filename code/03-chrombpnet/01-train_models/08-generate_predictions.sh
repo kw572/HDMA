@@ -10,7 +10,7 @@ set -euo pipefail
 source ../config.sh
 
 # set bias model
-bias_params="${BIAS_PARAMS:-1-col_aspn_ogna_thresh0.4}"
+bias_params="${BIAS_PARAMS:-${chrombpnet_bias_params}}"
 model_dir="${models_dir%/}/bias_${bias_params}"
 ref_fasta="${ref_fasta}"
 
@@ -27,6 +27,39 @@ slurm_job_active() {
 
 read -r -a predict_sbatch_extra_args <<< "${CHROMBPNET_PREDICT_SBATCH_ARGS:---partition=gpu}"
 dataset_filter_regex="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
+num_folds="${chrombpnet_train_num_folds}"
+effective_folds=$(( num_folds < 5 ? num_folds : 5 ))
+
+completed_folds_for_dataset() {
+  local dataset="$1"
+  local folds_keep=""
+  if [[ -f "${chrombpnet_models_keep2}" ]]; then
+    folds_keep=$(awk -v dataset="${dataset}" '$1 == dataset {print $2; exit}' "${chrombpnet_models_keep2}")
+  fi
+
+  if [[ -z "${folds_keep}" && -f "${chrombpnet_models_keep}" ]]; then
+    folds_keep=$(awk -v dataset="${dataset}" '$1 == dataset {print $2; exit}' "${chrombpnet_models_keep}")
+  fi
+
+  if [[ -n "${folds_keep}" ]]; then
+    printf '%s\n' "${folds_keep}"
+    return 0
+  fi
+
+  local fold
+  local found=()
+  for ((fold = 0; fold < effective_folds; fold++)); do
+    if [[ -f "${model_dir}/${dataset}/fold_${fold}/evaluation/overall_report.html" ]]; then
+      found+=("fold_${fold}")
+    fi
+  done
+
+  if [[ "${#found[@]}" -gt 0 ]]; then
+    IFS=,
+    printf '%s\n' "${found[*]}"
+    unset IFS
+  fi
+}
 
 if [[ -f "${chrombpnet_models_keep2}" ]]; then
   datasets=$(awk '{print $1}' "${chrombpnet_models_keep2}")
@@ -60,23 +93,38 @@ for dataset in ${datasets}; do
 
     # construct paths based on the current mode
     if [[ "$mode" == "bias_corrected" ]]; then
-      out_dir="${preds_scratch%/}/bias_corrected"
-      final_out_dir="${preds_dir%/}/bias_corrected"
+      out_dir="${preds_scratch%/}/bias_${bias_params}/bias_corrected"
+      final_out_dir="${preds_dir%/}/bias_${bias_params}/bias_corrected"
       out_key="nobias"
-      model_suffix="_nobias"
     else
-      out_dir="${preds_scratch%/}/uncorrected"
-      final_out_dir="${preds_dir%/}/uncorrected"
+      out_dir="${preds_scratch%/}/bias_${bias_params}/uncorrected"
+      final_out_dir="${preds_dir%/}/bias_${bias_params}/uncorrected"
       out_key="uncorrected"
-      model_suffix=""
+    fi
+    mkdir -p "${out_dir}" "${final_out_dir}"
+
+    folds_csv="$(completed_folds_for_dataset "${dataset}")"
+    if [[ -z "${folds_csv}" ]]; then
+      echo -e "\t\tno completed folds found for ${dataset}, skipping ${mode} predictions..."
+      continue
     fi
 
-    # specify models
-    model_fold_0="${model_dir}/${dataset}/fold_0/models/chrombpnet${model_suffix}.h5"
-    model_fold_1="${model_dir}/${dataset}/fold_1/models/chrombpnet${model_suffix}.h5"
-    model_fold_2="${model_dir}/${dataset}/fold_2/models/chrombpnet${model_suffix}.h5"
-    model_fold_3="${model_dir}/${dataset}/fold_3/models/chrombpnet${model_suffix}.h5"
-    model_fold_4="${model_dir}/${dataset}/fold_4/models/chrombpnet${model_suffix}.h5"
+    IFS=',' read -r -a folds <<< "${folds_csv}"
+    model_paths=()
+    for fold_name in "${folds[@]}"; do
+      if [[ "$mode" == "bias_corrected" ]]; then
+        model_file="${model_dir}/${dataset}/${fold_name}/models/chrombpnet_nobias.h5"
+      else
+        model_file="${model_dir}/${dataset}/${fold_name}/models/chrombpnet.h5"
+      fi
+      [[ -f "${model_file}" ]] || continue
+      model_paths+=("${model_file}")
+    done
+
+    if [[ "${#model_paths[@]}" -eq 0 ]]; then
+      echo -e "\t\tno model files found for ${dataset} (${mode}), skipping..."
+      continue
+    fi
 
     peaks_file="${chrombpnet_peaks_dir%/}/${dataset}__peaks_bpnet.narrowPeak"
     out_prefix="${out_dir%/}/${dataset}_avg"
@@ -101,11 +149,9 @@ for dataset in ${datasets}; do
       echo " ${chromsizes}"
       echo " ${out_prefix}"
       echo " ${out_key}"
-      echo " ${model_fold_0}"
-      echo " ${model_fold_1}"
-      echo " ${model_fold_2}"
-      echo " ${model_fold_3}"
-      echo " ${model_fold_4}"
+      for model_file in "${model_paths[@]}"; do
+        echo " ${model_file}"
+      done
 
       sbatch "${predict_sbatch_extra_args[@]}" -J "${job_name}" "./${JOBSCRIPT}" "${dataset}" \
           "${peaks_file}" \
@@ -113,11 +159,7 @@ for dataset in ${datasets}; do
           "${chromsizes}" \
           "${out_prefix}" \
           "${out_key}" \
-          "${model_fold_0}" \
-          "${model_fold_1}" \
-          "${model_fold_2}" \
-          "${model_fold_3}" \
-          "${model_fold_4}"
+          "${model_paths[@]}"
 
       sleep 3s
     fi

@@ -11,7 +11,7 @@ set -euo pipefail
 source ../config.sh
 
 # set bias model
-bias_params="${BIAS_PARAMS:-1_Jaw_Hyoid_thresh0.4}"
+bias_params="${BIAS_PARAMS:-${chrombpnet_bias_params}}"
 
 # set parameters
 ref_fasta="${ref_fasta}"
@@ -25,6 +25,35 @@ slurm_job_active() {
 
 read -r -a contrib_sbatch_extra_args <<< "${CHROMBPNET_CONTRIB_SBATCH_ARGS:---partition=gpu}"
 dataset_filter_regex="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
+num_folds="${chrombpnet_train_num_folds}"
+effective_folds=$(( num_folds < 5 ? num_folds : 5 ))
+
+completed_folds_for_dataset() {
+  local dataset="$1"
+  local folds_keep=""
+  if [[ -f "${chrombpnet_models_keep}" ]]; then
+    folds_keep=$(awk -v dataset="${dataset}" '$1 == dataset {print $2; exit}' "${chrombpnet_models_keep}")
+  fi
+
+  if [[ -n "${folds_keep}" ]]; then
+    printf '%s\n' "${folds_keep}"
+    return 0
+  fi
+
+  local fold
+  local found=()
+  for ((fold = 0; fold < effective_folds; fold++)); do
+    if [[ -f "${models_dir%/}/bias_${bias_params}/${dataset}/fold_${fold}/evaluation/overall_report.html" ]]; then
+      found+=("fold_${fold}")
+    fi
+  done
+
+  if [[ "${#found[@]}" -gt 0 ]]; then
+    IFS=,
+    printf '%s\n' "${found[*]}"
+    unset IFS
+  fi
+}
 
 
 
@@ -56,12 +85,18 @@ fi
 for dataset in ${datasets}; do
   echo ${dataset}
 
+  folds_csv="$(completed_folds_for_dataset "${dataset}")"
+  if [[ -z "${folds_csv}" ]]; then
+    echo -e "\tNo completed training folds found for ${dataset}; skipping."
+    continue
+  fi
+
 	peaks_file="${chrombpnet_peaks_dir%/}/${dataset}__peaks_bpnet.narrowPeak"
 	dataset_dir="${out_dir%/}/${dataset}"
 	[[ -d "${dataset_dir}" ]] || mkdir -p "${dataset_dir}"
 
-	for fold in {0..4}; do
-		fold_name=fold_${fold}
+	IFS=',' read -r -a folds <<< "${folds_csv}"
+	for fold_name in "${folds[@]}"; do
 		job_name="04-get_contrib_${dataset}_${fold_name}"
 		echo -e "\t${fold_name}"
 

@@ -20,7 +20,18 @@ library(stringr)
 library(rvest) # for parsing modisco HTML reports
 library(universalmotif) # for working with motifs
 
-bias_params <- Sys.getenv("BIAS_PARAMS", unset = "1-col_aspn_ogna_thresh0.4")
+resolve_bias_params <- function() {
+  bias_params <- Sys.getenv("BIAS_PARAMS", unset = "")
+  if (nzchar(bias_params)) {
+    return(bias_params)
+  }
+
+  config_path <- file.path(dirname(normalizePath(script_file[1], winslash = "/", mustWork = FALSE)), "../config.sh")
+  cmd <- sprintf("source %s >/dev/null 2>&1 && printf '%%s' \"$chrombpnet_bias_params\"", shQuote(config_path))
+  trimws(system2("bash", c("-lc", cmd), stdout = TRUE))
+}
+
+bias_params <- resolve_bias_params()
 out         <- file.path(base_dir, "01-models/qc")
 dir.create(out, showWarnings = FALSE, recursive = TRUE)
 

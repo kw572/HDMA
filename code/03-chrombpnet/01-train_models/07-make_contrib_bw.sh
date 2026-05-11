@@ -10,7 +10,7 @@ set -euo pipefail
 source ../config.sh
 
 # set bias model
-bias_params="${BIAS_PARAMS:-1-col_aspn_ogna_thresh0.4}"
+bias_params="${BIAS_PARAMS:-${chrombpnet_bias_params}}"
 
 # set outdir on scratch for faster IO
 in_dir="${contribs_scratch%/}/bias_${bias_params}"

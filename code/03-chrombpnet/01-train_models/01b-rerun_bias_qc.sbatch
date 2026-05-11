@@ -83,11 +83,11 @@ for mod in system libxml2 libxslt perl zlib ghostscript cairo pango; do
   load_optional_module "${mod}"
 done
 
-BIAS_CLUSTER="${BIAS_CLUSTER:-1_Jaw_Hyoid}"
-BIAS_MIN_THRESH="${BIAS_MIN_THRESH:-0.4}"
-BIAS_FOLD="${BIAS_FOLD:-fold_0}"
-DATA_TYPE="${DATA_TYPE:-ATAC}"
-BIAS_PARAMS="${BIAS_PARAMS:-${BIAS_CLUSTER}_thresh${BIAS_MIN_THRESH}}"
+BIAS_CLUSTER="${BIAS_CLUSTER:-${chrombpnet_bias_cluster}}"
+BIAS_MIN_THRESH="${BIAS_MIN_THRESH:-${chrombpnet_bias_min_thresh}}"
+BIAS_FOLD="${BIAS_FOLD:-${chrombpnet_bias_fold}}"
+DATA_TYPE="${DATA_TYPE:-${chrombpnet_data_type}}"
+BIAS_PARAMS="${BIAS_PARAMS:-${chrombpnet_bias_params}}"
 BIAS_OUT_DIR="${bias_dir%/}/${BIAS_PARAMS}"
 
 BIAS_MODEL="${BIAS_OUT_DIR}/models/bias.h5"

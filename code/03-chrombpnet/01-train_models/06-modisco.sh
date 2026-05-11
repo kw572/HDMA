@@ -11,7 +11,7 @@ set -euo pipefail
 source ../config.sh
 
 # set bias model
-bias_params="${BIAS_PARAMS:-1-col_aspn_ogna_thresh0.4}"
+bias_params="${BIAS_PARAMS:-${chrombpnet_bias_params}}"
 
 # set MODISCO params
 max_seqlets=1000000
