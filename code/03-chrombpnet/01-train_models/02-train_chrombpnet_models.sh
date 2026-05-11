@@ -82,12 +82,13 @@ for dataset in ${datasets}; do
 
 	  		sleep 5s
 
-			# If a prior run left a partial fold directory behind, wipe it before
-			# resubmitting so chrombpnet can recreate its output tree cleanly.
+			# Treat partial outputs as an intentionally skipped fold. Downstream
+			# stages already discover only completed folds via overall_report.html,
+			# so leaving incomplete directories in place lets the wrapper resume
+			# with whatever training finished successfully.
 			if [[ -d "${fold_dir}" ]] && [[ -n "$(find "${fold_dir}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
-				echo "existing partial outputs found under ${fold_dir}; removing fold directory before resubmission"
-				rm -rf "${fold_dir}"
-				mkdir -p "${fold_dir}"
+				echo -e "\t\texisting partial outputs found under ${fold_dir}; leaving them in place and skipping resubmission..."
+				continue
 			fi
 
 			echo "Running chrombpnet pipeline for ${dataset} ${fold_name}"
