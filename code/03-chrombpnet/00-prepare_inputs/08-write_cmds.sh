@@ -20,6 +20,7 @@ export LANG=C
 
 input_len=2114
 stride=1000
+num_folds="${chrombpnet_train_num_folds}"
 
 
 # CONSTRUCT COMMANDS ------------------------------------------------
@@ -49,8 +50,8 @@ for cluster in ${datasets}; do
   cluster_dir="${negatives_dir%/}/${cluster}"
   [[ -d "${cluster_dir}" ]] || mkdir -p "${cluster_dir}"
   
-  for fold in {0..4}; do
-    fold_name=fold_${fold}
+  for ((fold = 0; fold < num_folds; fold++)); do
+    fold_name="fold_${fold}"
     echo -e "\t${fold_name}"
   
     split_file="${split_dir%/}/${fold_name}.json"
@@ -71,7 +72,7 @@ for cluster in ${datasets}; do
         "${JOBSCRIPT}" "${ref_fasta}" "${chromsizes}" "${blacklist}" "${peak_file}" \
         "${input_len}" "${stride}" "${fold_out}" "${split_file}" >> "${cmdfile}"
     else
-      echo "${cluster} ${fold} done; skipping"
+      echo "${cluster} ${fold_name} done; skipping"
     fi
     
   done

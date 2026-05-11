@@ -2,6 +2,8 @@
 
 import argparse
 import gzip
+import subprocess
+import tempfile
 from pathlib import Path
 
 import pyBigWig
@@ -57,79 +59,92 @@ def main():
 
     chromsizes = load_chromsizes(chromsizes_path)
     chromsize_map = dict(chromsizes)
+    chrom_order = {chrom: idx for idx, (chrom, _) in enumerate(chromsizes)}
 
-    current_chrom = None
-    current_pos = None
-    current_count = 0
+    with tempfile.TemporaryDirectory(prefix="chrombpnet_bw_") as tmpdir_name:
+        tmpdir = Path(tmpdir_name)
+        raw_cutsites = tmpdir / "cutsites.tsv"
+        sorted_cutsites = tmpdir / "cutsites.sorted.tsv"
 
-    run_chrom = None
-    run_start = None
-    run_end = None
-    run_value = 0
+        with raw_cutsites.open("w", encoding="utf-8") as out_handle:
+            with open_text(fragments_path) as handle:
+                for line in handle:
+                    parts = line.rstrip("\n").split("\t")
+                    if len(parts) < 3:
+                        continue
 
-    with pyBigWig.open(str(output_path), "w") as bw:
-        bw.addHeader(chromsizes)
+                    chrom = parts[0]
+                    if chrom not in chromsize_map:
+                        continue
 
-        def add_cutsite(chrom, pos):
-            nonlocal current_chrom, current_pos, current_count
-            nonlocal run_chrom, run_start, run_end, run_value
+                    start = int(parts[1])
+                    end = int(parts[2])
+                    chrom_end = chromsize_map[chrom]
+                    if start < 0 or end <= start or start >= chrom_end:
+                        continue
 
-            if current_chrom is None:
-                current_chrom = chrom
-                current_pos = pos
-                current_count = 1
-                return
+                    out_handle.write(f"{chrom_order[chrom]}\t{chrom}\t{start}\n")
 
-            if chrom == current_chrom and pos == current_pos:
-                current_count += 1
-                return
+                    right_cut = end - 1
+                    if 0 <= right_cut < chrom_end:
+                        out_handle.write(f"{chrom_order[chrom]}\t{chrom}\t{right_cut}\n")
 
-            if run_chrom == current_chrom and run_end == current_pos and run_value == current_count:
-                run_end = current_pos + 1
-            else:
-                flush_run(bw, run_chrom, run_start, run_end, run_value)
-                run_chrom = current_chrom
-                run_start = current_pos
-                run_end = current_pos + 1
-                run_value = current_count
+        subprocess.run(
+            ["sort", "-k1,1n", "-k3,3n", str(raw_cutsites), "-o", str(sorted_cutsites)],
+            check=True,
+        )
 
-            current_chrom = chrom
-            current_pos = pos
-            current_count = 1
+        current_chrom = None
+        current_pos = None
+        current_count = 0
 
-        with open_text(fragments_path) as handle:
-            for line in handle:
-                parts = line.rstrip("\n").split("\t")
-                if len(parts) < 3:
-                    continue
+        run_chrom = None
+        run_start = None
+        run_end = None
+        run_value = 0
 
-                chrom = parts[0]
-                if chrom not in chromsize_map:
-                    continue
+        with pyBigWig.open(str(output_path), "w") as bw:
+            bw.addHeader(chromsizes)
 
-                start = int(parts[1])
-                end = int(parts[2])
-                chrom_end = chromsize_map[chrom]
-                if start < 0 or end <= start or start >= chrom_end:
-                    continue
+            with sorted_cutsites.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    _, chrom, pos_text = line.rstrip("\n").split("\t")
+                    pos = int(pos_text)
 
-                add_cutsite(chrom, start)
+                    if current_chrom is None:
+                        current_chrom = chrom
+                        current_pos = pos
+                        current_count = 1
+                        continue
 
-                right_cut = end - 1
-                if 0 <= right_cut < chrom_end:
-                    add_cutsite(chrom, right_cut)
+                    if chrom == current_chrom and pos == current_pos:
+                        current_count += 1
+                        continue
 
-        if current_chrom is not None:
-            if run_chrom == current_chrom and run_end == current_pos and run_value == current_count:
-                run_end = current_pos + 1
-            else:
-                flush_run(bw, run_chrom, run_start, run_end, run_value)
-                run_chrom = current_chrom
-                run_start = current_pos
-                run_end = current_pos + 1
-                run_value = current_count
+                    if run_chrom == current_chrom and run_end == current_pos and run_value == current_count:
+                        run_end = current_pos + 1
+                    else:
+                        flush_run(bw, run_chrom, run_start, run_end, run_value)
+                        run_chrom = current_chrom
+                        run_start = current_pos
+                        run_end = current_pos + 1
+                        run_value = current_count
 
-        flush_run(bw, run_chrom, run_start, run_end, run_value)
+                    current_chrom = chrom
+                    current_pos = pos
+                    current_count = 1
+
+            if current_chrom is not None:
+                if run_chrom == current_chrom and run_end == current_pos and run_value == current_count:
+                    run_end = current_pos + 1
+                else:
+                    flush_run(bw, run_chrom, run_start, run_end, run_value)
+                    run_chrom = current_chrom
+                    run_start = current_pos
+                    run_end = current_pos + 1
+                    run_value = current_count
+
+            flush_run(bw, run_chrom, run_start, run_end, run_value)
 
     print(output_path)
 

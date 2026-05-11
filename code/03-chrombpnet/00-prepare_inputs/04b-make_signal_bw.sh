@@ -21,12 +21,15 @@ set -euo pipefail
 # SETUP ------------------------------------------------------------------------
 
 # load conda environment and modules
+set +u
 eval "$(conda shell.bash hook)"
 conda activate chrombpnet
+set -u
 
 load_optional_module() {
   local mod="$1"
   [[ -n "${mod}" ]] || return 0
+  command -v module >/dev/null 2>&1 || return 0
   if module -t avail "${mod}" 2>&1 | grep -Fq "${mod}"; then
     module load "${mod}"
   else
@@ -43,7 +46,9 @@ load_requested_modules() {
     load_optional_module "${mod}"
   done
 }
-module load biology bedtools samtools
+for mod in biology bedtools samtools; do
+  load_optional_module "${mod}"
+done
 
 # source configuration variables
 source ../config.sh
@@ -62,6 +67,25 @@ export signal_dir=$bigwigs_signal_dir
 export cluster_frags_dir=${cluster_frags_dir}
 export genome_size=${genome_size}
 
+clip_bedgraph_to_chromsizes() {
+  local input_bedgraph="$1"
+  local chromsizes_file="$2"
+  local output_bedgraph="$3"
+
+  awk 'BEGIN { OFS="\t" }
+    FNR == NR {
+      if (NF >= 2) chromsize[$1] = $2
+      next
+    }
+    {
+      if (!($1 in chromsize)) next
+      start = ($2 < 0 ? 0 : $2)
+      end = ($3 > chromsize[$1] ? chromsize[$1] : $3)
+      if (end > start) print $1, start, end, $4
+    }
+  ' "${chromsizes_file}" "${input_bedgraph}" > "${output_bedgraph}"
+}
+
 
 # SCRIPT -----------------------------------------------------------------------
 
@@ -70,8 +94,8 @@ callpeak () {
   # SET INPUTS
   dataset=${1}
   in_dir="${cluster_frags_dir%/}/fragments"
-  out_dir=${signal_dir}
-  fragments=${in_dir}/${dataset}__sorted.tsv
+  out_dir="${signal_dir}"
+  fragments="${in_dir}/${dataset}__sorted.tsv"
 
   fc_bedgraph="${dataset}.fc.signal.bedgraph"
   fc_bedgraph_srt="${dataset}.fc.signal.srt.bedgraph"    
@@ -93,15 +117,15 @@ callpeak () {
   echo $pval_bedgraph_srt
   echo $pval_bigwig
 
-  echo "@@ ${dataset} calling peaks..." &
+  echo "@@ ${dataset} calling peaks..."
 
   # PEAK CALLING ---------------------------------------------------------------
 
   # call peaks on the cluster's fragments file
-  macs2 callpeak -t ${fragments} -f BED -n ${dataset} \
-    -g ${genome_size} --outdir ${out_dir} \
+  macs2 callpeak -t "${fragments}" -f BED -n "${dataset}" \
+    -g "${genome_size}" --outdir "${out_dir}" \
     -p 0.01 --shift -75 --extsize 150 --nomodel -B --SPMR --keep-dup all --call-summits \
-    &> ${out_dir}/log__${dataset}.txt
+    &> "${out_dir}/log__${dataset}.txt"
 
 
   # the next steps are adapted from the ENCODE bulk ATAC pipeline at
@@ -111,41 +135,45 @@ callpeak () {
 
   # run bdgcmp to get the fold change track, then account for chromosome sizes,
   # making sure features do not extend past the chromosomes
-  macs2 bdgcmp -t ${out_dir}/${dataset}_treat_pileup.bdg -c ${out_dir}/${dataset}_control_lambda.bdg \
-    --o-prefix ${dataset} --outdir ${out_dir} -m FE
-  slopBed -i ${out_dir}/${dataset}_FE.bdg -g $input_chromsizes -b 0 \
-    | bedClip stdin $input_chromsizes ${out_dir}/${fc_bedgraph}
+  macs2 bdgcmp -t "${out_dir}/${dataset}_treat_pileup.bdg" -c "${out_dir}/${dataset}_control_lambda.bdg" \
+    --o-prefix "${dataset}" --outdir "${out_dir}" -m FE
+  clip_bedgraph_to_chromsizes \
+    "${out_dir}/${dataset}_FE.bdg" \
+    "${input_chromsizes}" \
+    "${out_dir}/${fc_bedgraph}"
 
   # sort and make bigwig
   # sorting as required by bedGraphToBigWig:
   # https://github.com/ENCODE-DCC/kentUtils/blob/master/src/utils/bedGraphToBigWig/bedGraphToBigWig.c#L43
-  sort -k1,1 -k2,2n ${out_dir}/${fc_bedgraph} > ${out_dir}/${fc_bedgraph_srt}
-  bedGraphToBigWig ${out_dir}/${fc_bedgraph_srt} ${input_chromsizes} ${out_dir}/${fc_bigwig}
+  sort -k1,1 -k2,2n "${out_dir}/${fc_bedgraph}" > "${out_dir}/${fc_bedgraph_srt}"
+  bedGraphToBigWig "${out_dir}/${fc_bedgraph_srt}" "${input_chromsizes}" "${out_dir}/${fc_bigwig}"
 
   # clean up
-  rm -f ${out_dir}/${dataset}_FE.bdg
-  rm -f ${out_dir}/${fc_bedgraph} ${out_dir}/${fc_bedgraph_srt}
+  rm -f "${out_dir}/${dataset}_FE.bdg"
+  rm -f "${out_dir}/${fc_bedgraph}" "${out_dir}/${fc_bedgraph_srt}"
 
 
   # PVAL -----------------------------------------------------------------------
 
   # sval counts the number of tags per million in the (compressed) BED file
-  sval=$(wc -l <(zcat -f ${fragments}) | awk '{printf "%f", $1/1000000}')
+  sval=$(wc -l <(zcat -f "${fragments}") | awk '{printf "%f", $1/1000000}')
   echo $sval
 
-  macs2 bdgcmp -t ${out_dir}/${dataset}_treat_pileup.bdg -c ${out_dir}/${dataset}_control_lambda.bdg \
-    --o-prefix ${dataset} --outdir ${out_dir} -m ppois -S ${sval}
-  slopBed -i ${out_dir}/${dataset}_ppois.bdg -g $input_chromsizes -b 0 \
-    | bedClip stdin $input_chromsizes ${out_dir}/${pval_bedgraph}
+  macs2 bdgcmp -t "${out_dir}/${dataset}_treat_pileup.bdg" -c "${out_dir}/${dataset}_control_lambda.bdg" \
+    --o-prefix "${dataset}" --outdir "${out_dir}" -m ppois -S "${sval}"
+  clip_bedgraph_to_chromsizes \
+    "${out_dir}/${dataset}_ppois.bdg" \
+    "${input_chromsizes}" \
+    "${out_dir}/${pval_bedgraph}"
 
-  sort -k1,1 -k2,2n ${out_dir}/${pval_bedgraph} > ${out_dir}/${pval_bedgraph_srt}
-  bedGraphToBigWig ${out_dir}/${pval_bedgraph_srt} $input_chromsizes ${out_dir}/${pval_bigwig}
+  sort -k1,1 -k2,2n "${out_dir}/${pval_bedgraph}" > "${out_dir}/${pval_bedgraph_srt}"
+  bedGraphToBigWig "${out_dir}/${pval_bedgraph_srt}" "${input_chromsizes}" "${out_dir}/${pval_bigwig}"
 
   # clean up
-  rm -f ${out_dir}/${dataset}_control_lambda.bdg ${out_dir}/${dataset}_treat_lambda.bdg
-  rm -f ${out_dir}/${dataset}_ppois.bdg
-  rm -f ${out_dir}/${pval_bedgraph} ${out_dir}/${pval_bedgraph_srt}
-  rm -f ${out_dir}/${dataset}_peaks.xls
+  rm -f "${out_dir}/${dataset}_control_lambda.bdg" "${out_dir}/${dataset}_treat_lambda.bdg"
+  rm -f "${out_dir}/${dataset}_ppois.bdg"
+  rm -f "${out_dir}/${pval_bedgraph}" "${out_dir}/${pval_bedgraph_srt}"
+  rm -f "${out_dir}/${dataset}_peaks.xls"
   echo "@@ done ${dataset}."
 
 }
@@ -154,7 +182,12 @@ export -f callpeak
 all_frags_dir="${cluster_frags_dir%/}/fragments"
 
 # for every [cluster]__sorted.tsv file, extract [cluster]
-all_sorted=$(ls $all_frags_dir/*__sorted.tsv | xargs -n 1 -I {} basename {} __sorted.tsv)	
+all_sorted=$(
+  find "${all_frags_dir}" -maxdepth 1 -type f -name '*__sorted.tsv' ! -name '._*' -print |
+    while IFS= read -r path; do
+      basename "${path}" __sorted.tsv
+    done
+)
 
 datasets=$( for dataset in ${all_sorted[@]}; do
 
@@ -169,7 +202,10 @@ datasets=$( for dataset in ${all_sorted[@]}; do
 
 
 echo "@ Calling peaks on cell types: ${datasets}"
+echo "@ running signal bigwig generation sequentially on macOS"
 
-parallel --linebuffer -j ${input_parallel} callpeak {} ::: ${datasets}
+for dataset in ${datasets}; do
+  callpeak "${dataset}"
+done
 
 echo "@ done!"

@@ -20,6 +20,17 @@ export LC_ALL=C
 export LC_CTYPE=C
 export LANG=C
 
+if [[ -z "${R_LIBS_USER:-}" ]]; then
+  user_r_lib=$(
+    find "${HOME}/Library/R" -maxdepth 2 -type d -name library 2>/dev/null |
+      sort |
+      tail -n 1
+  )
+  if [[ -n "${user_r_lib}" ]]; then
+    export R_LIBS_USER="${user_r_lib}"
+  fi
+fi
+
 genome_id="${1:-GRCz11}"
 
 datasets=$(

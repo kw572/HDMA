@@ -16,6 +16,7 @@ source ../config.sh
 export LC_ALL=C
 export LC_CTYPE=C
 export LANG=C
+num_folds="${chrombpnet_train_num_folds}"
 
 datasets=$(
   find "${peaks_dir}" -maxdepth 1 -type f -name '*__peaks_overlap_filtered.narrowPeak' ! -name '._*' -print |
@@ -34,7 +35,11 @@ for dataset in ${datasets}; do
     continue
   fi
 
-  python 10-subset_backgrounds.py --cluster "${dataset}" --negatives-dir "${negatives_dir}" --output-dir "${negatives_subset_dir}"
+  python 10-subset_backgrounds.py \
+    --cluster "${dataset}" \
+    --negatives-dir "${negatives_dir}" \
+    --output-dir "${negatives_subset_dir}" \
+    --num-folds "${num_folds}"
   
 done
 

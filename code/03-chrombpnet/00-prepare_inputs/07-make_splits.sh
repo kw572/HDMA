@@ -10,8 +10,10 @@ set -euo pipefail
 
 # Create ChromBPNet chromosome fold JSONs from the chromosomes present in config.sh.
 
+set +u
 eval "$(conda shell.bash hook)"
 conda activate chrombpnet
+set -u
 
 source ../config.sh
 

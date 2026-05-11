@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Purpose: runner script which executes all commands to get GC-matched negative
 # or background training regions, using
@@ -15,16 +16,27 @@
 #SBATCH -n 5
 #SBATCH --time=02:00:00
 
-cmdfile="08-write_cmds.sh"
+cmdfile="08-commands.sh"
 
-for i in {0..4}; do
-	id=$((SLURM_ARRAY_TASK_ID+i))
-	cmd=$(sed -n "${id}p" $cmdfile)
-	bash ${cmd} &
-done
+if [[ ! -f "${cmdfile}" ]]; then
+  echo "Command file not found: ${cmdfile}" >&2
+  exit 1
+fi
+
+if [[ -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then
+  for i in {0..4}; do
+    id=$((SLURM_ARRAY_TASK_ID+i))
+    cmd=$(sed -n "${id}p" "${cmdfile}")
+    [[ -n "${cmd}" ]] || continue
+    bash -lc "${cmd}" &
+  done
+else
+  while IFS= read -r cmd; do
+    [[ -n "${cmd}" ]] || continue
+    bash -lc "${cmd}"
+  done < "${cmdfile}"
+fi
 
 # # important to make sure the job doesn't exit before the background tasks are done
 # # https://www.sherlock.stanford.edu/docs/advanced-topics/job-management/#minimizing-the-number-of-jobs-in-queue
 wait
-
-

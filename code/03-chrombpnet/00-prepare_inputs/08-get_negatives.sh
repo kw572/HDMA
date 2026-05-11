@@ -4,7 +4,7 @@
 eval "$(conda shell.bash hook)"
 conda activate chrombpnet
 
-chrombpnet_bin="${CHROMBPNET_BIN:-/home1/kuangtse/.conda/envs/chrombpnet/bin/chrombpnet}"
+source ../config.sh
 
 ref_fasta=${1}
 chrom_sizes=${2}

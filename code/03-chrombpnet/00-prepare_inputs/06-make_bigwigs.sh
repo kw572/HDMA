@@ -10,8 +10,10 @@ set -euo pipefail
 
 # Create unnormalized cut-site bigWigs from each cluster's sorted fragment file.
 
+set +u
 eval "$(conda shell.bash hook)"
 conda activate chrombpnet
+set -u
 
 source ../config.sh
 

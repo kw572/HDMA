@@ -24,6 +24,7 @@ def parse_args():
 	parser.add_argument("--cluster", type=str, default=None, help="Cluster for which to select background regions.")
 	parser.add_argument("--negatives-dir", type=str, default=None, help="Base directory for the negatives, expected to contain a folder matching --cluster.")
 	parser.add_argument("--output-dir", type=str, default=None, help="Output directory for the selected background regions.")
+	parser.add_argument("--num-folds", type=int, default=5, help="Number of folds to sample from.")
 	
 	args = parser.parse_args()
 
@@ -37,7 +38,7 @@ def main(args):
 	cluster = args.cluster
 	negatives_dir = args.negatives_dir
 	output_dir = args.output_dir
-	folds = [0, 1, 2, 3, 4]
+	folds = list(range(args.num_folds))
 	
 	print("------------" + cluster + "------------")
 
@@ -52,7 +53,10 @@ def main(args):
 		nonpeaks_fold = pd.read_csv(nonpeaks_bed, sep="\t", header=None)
 		
 		# select 20 random indices
-		indices = np.random.choice(nonpeaks_fold.index, 20, replace=False)
+		n_to_sample = min(20, len(nonpeaks_fold.index))
+		if n_to_sample == 0:
+			continue
+		indices = np.random.choice(nonpeaks_fold.index, n_to_sample, replace=False)
 
 		# subset the peaks to the indices
 		nonpeaks_subset = nonpeaks_fold.iloc[indices]
@@ -61,6 +65,9 @@ def main(args):
 		nonpeaks.append(nonpeaks_subset)
 
 	# concatenate
+	if len(nonpeaks) == 0:
+		raise ValueError(f"No negatives available to subset for cluster {cluster}")
+
 	nonpeaks = pd.concat(nonpeaks)
 
 	# write to file
