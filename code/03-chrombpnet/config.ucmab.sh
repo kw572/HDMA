@@ -18,11 +18,17 @@ chromsizes="${refs}/zf.chr.major.chrom.sizes"
 blacklist="${refs}/blacklist.GRCz11.chr.bed"
 genome_size=""
 
+if [[ -z "${genome_size}" && -f "${chromsizes}" ]]; then
+  genome_size="$(awk 'NF {sum += $2} END {printf "%.0f\n", sum}' "${chromsizes}")"
+fi
+
 base_dir="${data_root}/work"
 sample_frags_dir="${base_dir}/00-inputs/sample_fragments"
 cluster_frags_dir="${base_dir}/00-inputs/cluster_fragments"
 peaks_dir="${base_dir}/00-inputs/peaks"
 chrombpnet_peaks_dir="${base_dir}/00-inputs/chrombpnet_peaks"
+bigwigs_dir="${base_dir}/00-inputs/bigwigs"
+bigwigs_signal_dir="${base_dir}/00-inputs/signal_bigwigs"
 split_dir="${base_dir}/00-inputs/splits"
 negatives_dir="${base_dir}/00-inputs/negatives"
 negatives_subset_dir="${base_dir}/00-inputs/negatives_subset"
@@ -40,6 +46,16 @@ preds_scratch="${preds_dir}"
 chrombpnet_models_keep="${qc_dir}/chrombpnet_models_keep.tsv"
 chrombpnet_models_keep2="${qc_dir}/chrombpnet_models_keep2.tsv"
 
+# Tool and training defaults
+chrombpnet_bin="${CHROMBPNET_BIN:-chrombpnet}"
+chrombpnet_train_num_folds="${CHROMBPNET_TRAIN_NUM_FOLDS:-5}"
+chrombpnet_data_type="${DATA_TYPE:-ATAC}"
+chrombpnet_negative_sampling_ratio="${CHROMBPNET_NEGATIVE_SAMPLING_RATIO:-0.1}"
+chrombpnet_bias_cluster="${BIAS_CLUSTER:-1_Jaw_Hyoid}"
+chrombpnet_bias_min_thresh="${BIAS_MIN_THRESH:-0.4}"
+chrombpnet_bias_fold="${BIAS_FOLD:-fold_0}"
+chrombpnet_bias_params="${BIAS_PARAMS:-${chrombpnet_bias_cluster}_thresh${chrombpnet_bias_min_thresh}}"
+
 labcluster_scratch="${TMPDIR:-/tmp}"
 
 mkdir -p \
@@ -56,6 +72,8 @@ mkdir -p \
   "${cluster_frags_dir}/pseudorepT" \
   "${peaks_dir}" \
   "${chrombpnet_peaks_dir}" \
+  "${bigwigs_dir}" \
+  "${bigwigs_signal_dir}" \
   "${split_dir}" \
   "${negatives_dir}" \
   "${negatives_subset_dir}" \

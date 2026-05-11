@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 #SBATCH --job-name="06-make_bw"
 #SBATCH --time=12:00:00
 #SBATCH --output=../../logs/03-chrombpnet/00/%x-%j.out
@@ -6,58 +6,46 @@
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=30G
 
-# Create unnormalized bigwigs from the observed pseudobulk accessibility per cluster.
+set -euo pipefail
 
-# load conda environment
+# Create unnormalized cut-site bigWigs from each cluster's sorted fragment file.
+
 eval "$(conda shell.bash hook)"
-conda activate chrombpnet_tmp
+conda activate chrombpnet
 
-# source configuration variables
 source ../config.sh
 
-input_parallel=6
-export out_dir="."
-export script_loc="${chrombpnet_code}/chrombpnet/helpers/preprocessing/reads_to_bigwig.py"
-export fasta_file="${ref_fasta}"
-export cluster_frags_dir="${cluster_frags_dir%/}"
-export chromsizes=$chromsizes
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+python_script="${script_dir}/06-make_bigwigs.py"
+fragments_dir="${cluster_frags_dir%/}/fragments"
+out_dir="${bigwigs_dir%/}"
 
-makebigwig () {
-  dataset=${1}
-	frag_file="${cluster_frags_dir}/fragments/${dataset}__sorted.tsv"
-	out_file="${out_dir}/${dataset}"
-	
-	head $frag_file
-	echo $out_file
-	
-	echo "${dataset} starting"
-	python3.8 ${script_loc} -g ${fasta_file} -ifrag ${frag_file} -c ${chromsizes} -o ${out_file} -d ATAC
-	echo "${dataset} done"
-}
-export -f makebigwig
+datasets=$(
+  find "${fragments_dir}" -maxdepth 1 -type f -name '*__sorted.tsv' ! -name '._*' -print |
+    while IFS= read -r path; do
+      dataset="$(basename "${path}" __sorted.tsv)"
+      done_file="${out_dir}/${dataset}_unstranded.bw"
+      if [[ ! -f "${done_file}" ]]; then
+        printf '%s\n' "${dataset}"
+      fi
+    done
+)
 
-all_pseudorep_dir="${cluster_frags_dir%/}/fragments"
-
-# for every [cluster]__sorted.tsv file, extract [cluster]
-all_sorted=$(ls $all_pseudorep_dir/*__sorted.tsv | xargs -n 1 -I {} basename {} __sorted.tsv)	
-
-datasets=$( for dataset in ${all_sorted[@]}; do
-	    
-    # check if the done file exists
-    # if not, keep the dataset & get list of all unique ones
-    done_file="${bigwigs_dir%/}/${dataset}_unstranded.bw"
-    if [[ ! -f "$done_file" ]]; then
-        echo "$dataset"
-    fi
-	
-	done | uniq )
-
+if [[ -z "${datasets}" ]]; then
+  echo "@ all cluster bigwigs already exist in ${out_dir}"
+  exit 0
+fi
 
 echo "@ Producing bigwigs for: ${datasets}"
 
-# DEBUG:
-# makebigwig Eye_c0
-
-parallel -j ${input_parallel} makebigwig {} ::: ${datasets}
+for dataset in ${datasets}; do
+  frag_file="${fragments_dir}/${dataset}__sorted.tsv"
+  out_prefix="${out_dir}/${dataset}"
+  echo "@ ${dataset}: ${frag_file} -> ${out_prefix}_unstranded.bw"
+  python "${python_script}" \
+    --fragments "${frag_file}" \
+    --chromsizes "${chromsizes}" \
+    --output-prefix "${out_prefix}"
+done
 
 echo "@ done"

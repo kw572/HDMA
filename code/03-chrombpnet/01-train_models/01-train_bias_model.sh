@@ -61,10 +61,10 @@ done
 source ../config.sh
 
 # set parameters
-min_thresh="${BIAS_MIN_THRESH:-0.4}"
-bias_cluster="${BIAS_CLUSTER:-1_Jaw_Hyoid__peaks_bpnet}"
-bias_fold="${BIAS_FOLD:-fold_0}"
-data_type="${DATA_TYPE:-ATAC}"
+min_thresh="${chrombpnet_bias_min_thresh}"
+bias_cluster="${chrombpnet_bias_cluster}"
+bias_fold="${chrombpnet_bias_fold}"
+data_type="${chrombpnet_data_type}"
 
 ref_fasta="${ref_fasta}"
 frag_file="${cluster_frags_dir}/fragments/${bias_cluster}__sorted.tsv"

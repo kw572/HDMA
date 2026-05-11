@@ -14,13 +14,12 @@ set -euo pipefail
 source ../config.sh
 
 # set bias model
-bias_params="${BIAS_PARAMS:-1-col_aspn_ogna_thresh0.4}"
+bias_params="${chrombpnet_bias_params}"
 bias_model="${bias_dir%/}/${bias_params}/models/bias.h5"
 
 # set parameters
-data_type="${DATA_TYPE:-ATAC}"
-ref_fasta="${ref_fasta}"
 out_dir="${models_dir%/}/bias_${bias_params}/"
+num_folds="${chrombpnet_train_num_folds}"
 
 # make outdir
 echo ${out_dir}
@@ -62,19 +61,13 @@ fi
 for dataset in ${datasets}; do
 	echo ${dataset}
 
-	frag_file="${cluster_frags_dir%/}/fragments/${dataset}__sorted.tsv"
-	peaks_file="${chrombpnet_peaks_dir%/}/${dataset}__peaks_bpnet.narrowPeak"
-
 	dataset_dir="${out_dir%/}/${dataset}"
 	[[ -d "${dataset_dir}" ]] || mkdir -p "${dataset_dir}"
 
-	for fold in {0..4}; do
+	for ((fold = 0; fold < num_folds; fold++)); do
 		fold_name=fold_${fold}
 		job_name="02-train_${dataset}_${fold_name}"
 		echo -e "\t${fold_name}"
-
-		negatives_file="${negatives_dir%/}/${dataset}/${fold_name}/output_negatives.bed"
-		split_file="${split_dir%/}/${fold_name}.json"
 
 		# this is the output directory for that fold, for that cluster
 		fold_dir="${dataset_dir}/${fold_name}/"
@@ -97,26 +90,15 @@ for dataset in ${datasets}; do
 				mkdir -p "${fold_dir}"
 			fi
 
-			echo "Running chrombpnet pipeline"
-			echo "--input-fragment-file ${frag_file}"
-			echo "--genome ${ref_fasta}"
-			echo "--chrom-sizes ${chromsizes}"
-			echo "--peaks ${peaks_file}"
-			echo "--nonpeaks ${negatives_file}"
-			echo "--chr-fold-path ${split_file}"
-			echo "--bias-model-path ${bias_model}"
-			echo "--output-dir ${fold_dir}"
-			echo "--data-type ${data_type}"
+			echo "Running chrombpnet pipeline for ${dataset} ${fold_name}"
+			echo "config=${PWD}/../config.sh"
+			echo "bias_model=${bias_model}"
+			echo "output_dir=${fold_dir}"
 
-			sbatch "${train_sbatch_extra_args[@]}" -J "${job_name}" "${JOBSCRIPT}" "${frag_file}" \
-						"${ref_fasta}" \
-						"${chromsizes}" \
-						"${peaks_file}" \
-						"${negatives_file}" \
-						"${split_file}" \
-						"${bias_model}" \
-						"${fold_dir}" \
-						"${data_type}"
+			sbatch "${train_sbatch_extra_args[@]}" \
+				--export=ALL,CHROMBPNET_TRAIN_DATASET="${dataset}",CHROMBPNET_TRAIN_FOLD="${fold_name}",CHROMBPNET_TRAIN_BIAS_PARAMS="${bias_params}",CHROMBPNET_TRAIN_OUT_DIR="${fold_dir}" \
+				-J "${job_name}" \
+				"${JOBSCRIPT}"
 		fi
 	done
 	sleep 20s

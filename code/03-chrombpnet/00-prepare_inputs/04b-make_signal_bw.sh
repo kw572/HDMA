@@ -1,10 +1,12 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 #SBATCH --job-name="04b-signal"
 #SBATCH --time=08:00:00
 #SBATCH --output=../../logs/03-chrombpnet/00/%x-%j.out
 #SBATCH --partition=main
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=120G
+
+set -euo pipefail
 
 # Purpose: call peaks on each cluster's fragments (no pseudoreplicates),
 # in order to generate the fold-change and p-value signal tracks for visualization.
@@ -20,8 +22,28 @@
 
 # load conda environment and modules
 eval "$(conda shell.bash hook)"
-conda activate chrombpnet_tmp
+conda activate chrombpnet
 
+load_optional_module() {
+  local mod="$1"
+  [[ -n "${mod}" ]] || return 0
+  if module -t avail "${mod}" 2>&1 | grep -Fq "${mod}"; then
+    module load "${mod}"
+  else
+    echo "WARNING: module '${mod}' is unavailable; continuing without it."
+  fi
+}
+
+load_requested_modules() {
+  local modules_string="$1"
+  local mod
+  [[ -n "${modules_string}" ]] || return 0
+  read -r -a modules <<< "${modules_string}"
+  for mod in "${modules[@]}"; do
+    load_optional_module "${mod}"
+  done
+}
+module load biology bedtools samtools
 
 # source configuration variables
 source ../config.sh
@@ -38,6 +60,7 @@ export input_chromsizes=$chromsizes
 export signal_dir=$bigwigs_signal_dir
 
 export cluster_frags_dir=${cluster_frags_dir}
+export genome_size=${genome_size}
 
 
 # SCRIPT -----------------------------------------------------------------------
@@ -76,7 +99,7 @@ callpeak () {
 
   # call peaks on the cluster's fragments file
   macs2 callpeak -t ${fragments} -f BED -n ${dataset} \
-    -g hs --outdir ${out_dir} \
+    -g ${genome_size} --outdir ${out_dir} \
     -p 0.01 --shift -75 --extsize 150 --nomodel -B --SPMR --keep-dup all --call-summits \
     &> ${out_dir}/log__${dataset}.txt
 

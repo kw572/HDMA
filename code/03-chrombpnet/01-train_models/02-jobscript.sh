@@ -8,17 +8,21 @@
 #SBATCH --requeue
 #SBATCH --open-mode=append
 
-set -eo pipefail
+set -euo pipefail
 
-frag_file="${1}"
-ref_fasta="${2}"
-chromsizes="${3}"
-peaks_file="${4}"
-negatives_file="${5}"
-split_file="${6}"
-bias_model="${7}"
-out_dir="${8}"
-data_type="${9}"
+source ../config.sh
+
+dataset="${CHROMBPNET_TRAIN_DATASET:?CHROMBPNET_TRAIN_DATASET is required}"
+fold_name="${CHROMBPNET_TRAIN_FOLD:?CHROMBPNET_TRAIN_FOLD is required}"
+bias_params="${CHROMBPNET_TRAIN_BIAS_PARAMS:-${chrombpnet_bias_params}}"
+out_dir="${CHROMBPNET_TRAIN_OUT_DIR:-${models_dir%/}/bias_${bias_params}/${dataset}/${fold_name}}"
+
+frag_file="${cluster_frags_dir%/}/fragments/${dataset}__sorted.tsv"
+peaks_file="${chrombpnet_peaks_dir%/}/${dataset}__peaks_bpnet.narrowPeak"
+negatives_file="${negatives_dir%/}/${dataset}/${fold_name}/output_negatives.bed"
+split_file="${split_dir%/}/${fold_name}.json"
+bias_model="${bias_dir%/}/${bias_params}/models/bias.h5"
+data_type="${chrombpnet_data_type}"
 
 timestamp() {
     date +"%Y-%m-%d_%H-%M-%S" | tr -d '\n'
@@ -152,7 +156,7 @@ if [[ ! -f "${out_dir%/}/evaluation/overall_report.html" ]]; then
     done
 fi
 
-negative_sampling_ratio="${CHROMBPNET_NEGATIVE_SAMPLING_RATIO:-0.1}"
+negative_sampling_ratio="${chrombpnet_negative_sampling_ratio}"
 prepared_negatives_file="$(
     prepare_negatives_file \
         "${negatives_file}" \
@@ -165,6 +169,17 @@ prepared_negatives_file="$(
 if [[ "${prepared_negatives_file}" != "${negatives_file}" ]]; then
     echo "Using padded negatives file: ${prepared_negatives_file}"
 fi
+
+echo "Running chrombpnet pipeline"
+echo "--input-fragment-file ${frag_file}"
+echo "--genome ${ref_fasta}"
+echo "--chrom-sizes ${chromsizes}"
+echo "--peaks ${peaks_file}"
+echo "--nonpeaks ${prepared_negatives_file}"
+echo "--chr-fold-path ${split_file}"
+echo "--bias-model-path ${bias_model}"
+echo "--output-dir ${out_dir}"
+echo "--data-type ${data_type}"
 
 
 python - "${frag_file}" "${ref_fasta}" "${chromsizes}" "${peaks_file}" "${prepared_negatives_file}" "${split_file}" "${bias_model}" "${out_dir}" "${data_type}" <<'PY'
