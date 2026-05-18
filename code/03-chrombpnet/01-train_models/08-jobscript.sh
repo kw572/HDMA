@@ -9,7 +9,25 @@
 #SBATCH --open-mode=append
 
 set -euo pipefail
+set +u
+source /etc/profile
 
+module purge
+module load legacy/CentOS7
+module load gcc/8.3.0
+module load cuda/11.2.0
+module load cudnn/8.1.0.77-11.2-cuda
+
+# optional graphics deps
+module load cairo || true
+module load pango || true
+
+eval "$(conda shell.bash hook)"
+conda activate chrombpnet
+set -u
+
+echo "=== NVIDIA ==="
+nvidia-smi
 celltype="${1}"
 peaks_file="${2}"
 ref_fasta="${3}"

@@ -125,27 +125,11 @@ dataset_count_all() {
 }
 
 dataset_count_keep() {
-  if [[ -f "${chrombpnet_models_keep}" ]]; then
-    if [[ -n "${DATASET_FILTER_REGEX}" ]]; then
-      awk -v pattern="${DATASET_FILTER_REGEX}" 'NF && $1 ~ pattern {count++} END {print count+0}' "${chrombpnet_models_keep}"
-    else
-      awk 'NF {count++} END {print count+0}' "${chrombpnet_models_keep}"
-    fi
-  else
-    dataset_count_all
-  fi
+  list_keep_datasets | awk 'NF {count++} END {print count+0}'
 }
 
 dataset_count_keep2() {
-  if [[ -f "${chrombpnet_models_keep2}" ]]; then
-    if [[ -n "${DATASET_FILTER_REGEX}" ]]; then
-      awk -v pattern="${DATASET_FILTER_REGEX}" 'NF && $1 ~ pattern {count++} END {print count+0}' "${chrombpnet_models_keep2}"
-    else
-      awk 'NF {count++} END {print count+0}' "${chrombpnet_models_keep2}"
-    fi
-  else
-    dataset_count_keep
-  fi
+  list_keep2_datasets | awk 'NF {count++} END {print count+0}'
 }
 
 list_target_datasets() {
@@ -160,7 +144,37 @@ list_target_datasets() {
       cat
     fi
 }
+list_keep_datasets() {
+  if [[ -f "${chrombpnet_models_keep}" ]]; then
+    if [[ -n "${DATASET_FILTER_REGEX}" ]]; then
+      awk -v pattern="${DATASET_FILTER_REGEX}" '
+        NF && $1 != "NA" && $1 ~ pattern {print $1}
+      ' "${chrombpnet_models_keep}"
+    else
+      awk '
+        NF && $1 != "NA" {print $1}
+      ' "${chrombpnet_models_keep}"
+    fi
+  else
+    list_target_datasets
+  fi | sort -u
+}
 
+list_keep2_datasets() {
+  if [[ -f "${chrombpnet_models_keep2}" ]]; then
+    if [[ -n "${DATASET_FILTER_REGEX}" ]]; then
+      awk -v pattern="${DATASET_FILTER_REGEX}" '
+        NF && $1 != "NA" && $1 ~ pattern {print $1}
+      ' "${chrombpnet_models_keep2}"
+    else
+      awk '
+        NF && $1 != "NA" {print $1}
+      ' "${chrombpnet_models_keep2}"
+    fi
+  else
+    list_keep_datasets
+  fi | sort -u
+}
 dataset_has_completed_fold() {
   local dataset="$1"
   local fold
@@ -244,12 +258,15 @@ count_dataset_level_outputs() {
   local suffix="$2"
   local dataset
   local count=0
+
   while IFS= read -r dataset; do
     [[ -n "${dataset}" ]] || continue
+
     if [[ -f "${base_dir%/}/${dataset}/${suffix}" ]]; then
       count=$((count + 1))
     fi
-  done < <(list_target_datasets)
+  done < <(list_keep_datasets)
+
   printf '%s\n' "${count}"
 }
 
@@ -258,12 +275,15 @@ count_prediction_outputs() {
   local suffix="$2"
   local dataset
   local count=0
+
   while IFS= read -r dataset; do
     [[ -n "${dataset}" ]] || continue
+
     if [[ -f "${mode_dir%/}/${dataset}_avg_${suffix}" ]]; then
       count=$((count + 1))
     fi
-  done < <(list_target_datasets)
+  done < <(list_keep2_datasets)
+
   printf '%s\n' "${count}"
 }
 

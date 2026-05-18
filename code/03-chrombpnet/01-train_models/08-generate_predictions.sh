@@ -125,8 +125,9 @@ for dataset in ${datasets}; do
       echo -e "\t\tno model files found for ${dataset} (${mode}), skipping..."
       continue
     fi
-
-    peaks_file="${chrombpnet_peaks_dir%/}/${dataset}__peaks_bpnet.narrowPeak"
+  
+    in_dir="${contribs_scratch%/}/bias_${bias_params}"
+    peaks_file=${in_dir%/}/${dataset}/fold_0/peaks_shap.interpreted_regions.bed
     out_prefix="${out_dir%/}/${dataset}_avg"
     final_out_prefix="${final_out_dir%/}/${dataset}_avg"
     final_out_file1="${final_out_prefix}_chrombpnet_${out_key}_preds_w_logcounts.bed"

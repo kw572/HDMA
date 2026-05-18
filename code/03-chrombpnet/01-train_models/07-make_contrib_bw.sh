@@ -22,7 +22,7 @@ slurm_job_active() {
   squeue -h -u "${USER}" -n "${job_name}" -t PENDING,RUNNING,CONFIGURING,COMPLETING,SUSPENDED 2>/dev/null | grep -q .
 }
 
-read -r -a contrib_bw_sbatch_extra_args <<< "${CHROMBPNET_CONTRIB_BW_SBATCH_ARGS:---partition=gpu}"
+read -r -a contrib_bw_sbatch_extra_args <<< "${CHROMBPNET_CONTRIB_BW_SBATCH_ARGS:---partition=main}"
 dataset_filter_regex="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
 
 # CONSTRUCT COMMANDS -----------------------------------------------------------
@@ -55,8 +55,8 @@ for dataset in ${datasets}; do
 	echo ${dataset}
 	job_name="07-contrib_bw_${dataset}"
 	
-	peaks_file=${chrombpnet_peaks_dir%/}/${dataset}__peaks_bpnet.narrowPeak
-  
+	peaks_file=${in_dir%/}/${dataset}/fold_0/peaks_shap.interpreted_regions.bed
+ 
 	counts_peak_shaps=${in_dir%/}/${dataset}/average_shaps.counts.h5
 	counts_out_prefix=${in_dir%/}/${dataset}/average_shaps.counts
 	
