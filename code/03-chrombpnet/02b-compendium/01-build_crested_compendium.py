@@ -96,6 +96,13 @@ def load_crested_modisco_api():
             modisco_pkg.__path__ = [str(modisco_root)]
             sys.modules["crested.tl.modisco"] = modisco_pkg
 
+        utils_root = src_root / "crested" / "utils"
+        utils_pkg = sys.modules.get("crested.utils")
+        if utils_pkg is None:
+            utils_pkg = types.ModuleType("crested.utils")
+            utils_pkg.__path__ = [str(utils_root)]
+            sys.modules["crested.utils"] = utils_pkg
+
         if "loguru" not in sys.modules:
             loguru_module = types.ModuleType("loguru")
             logger = logging.getLogger("crested_modisco_fallback")
@@ -106,6 +113,24 @@ def load_crested_modisco_api():
             logger.setLevel(logging.INFO)
             loguru_module.logger = logger
             sys.modules["loguru"] = loguru_module
+
+        if "anndata" not in sys.modules:
+            anndata_module = types.ModuleType("anndata")
+
+            def _missing_read_h5ad(*args, **kwargs):
+                raise ImportError("anndata is unavailable in this motif-only runtime")
+
+            anndata_module.read_h5ad = _missing_read_h5ad
+            sys.modules["anndata"] = anndata_module
+
+        if "scanpy" not in sys.modules:
+            scanpy_module = types.ModuleType("scanpy")
+            sys.modules["scanpy"] = scanpy_module
+
+        load_module_from_path(
+            "crested.utils._logging",
+            utils_root / "_logging.py",
+        )
 
         load_module_from_path(
             "crested.tl.modisco._modisco_utils",

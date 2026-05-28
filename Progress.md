@@ -92,3 +92,20 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
 - Symptom: `ModuleNotFoundError: No module named 'loguru'`
 - Cause: CREsted's motif helpers import `loguru` for logging, but the available HPC `modiscolite` env does not include it.
 - Resolution: added a small fallback shim in `01-build_crested_compendium.py` that injects a minimal `loguru.logger` backed by Python's standard `logging` module before loading CREsted's motif source files.
+
+### Error 7: remote job logs were accidentally deleted during folder resync
+
+- Jobs affected: `8997745` log artifacts
+- Symptom: `sacct` showed the job failed, but `/scratch1/kuangtse/HDMA/code/03-chrombpnet/02b-compendium/Log/` was empty when inspected afterward.
+- Cause: the manual `rsync --delete` used to sync `02b-compendium/` from local to HPC removed the remote `Log/` directory because the local source tree does not keep job logs.
+- Resolution: treat `Log/` as HPC runtime state and avoid syncing over it before collecting failure output. Future monitor cycles should inspect logs first, then sync only after the relevant traceback has been copied into `Progress.md`.
+
+### Error 8: `modiscolite` HPC env is also missing `anndata` and `scanpy`
+
+- Job: `8998068`
+- Symptom: `ModuleNotFoundError: No module named 'anndata'`
+- Cause: CREsted's `_tfmodisco.py` imports `anndata`, `scanpy`, and `crested.utils._logging` at module import time, even though the `process_patterns` path we are calling does not actually use the H5AD/scanpy functionality.
+- Resolution: extended the bootstrap shim in `01-build_crested_compendium.py` to:
+  - create minimal `anndata` and `scanpy` placeholder modules for this motif-only runtime
+  - register `crested.utils` as a package namespace
+  - load `crested.utils._logging` directly from the CREsted checkout before loading `_tfmodisco.py`
