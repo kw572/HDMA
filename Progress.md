@@ -379,3 +379,24 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
 - The refreshed PNG sizes increased substantially, consistent with the taller layout:
   - `pattern_clustermap_counts_annotated.png`: `548K`
   - `pattern_clustermap_znorm_annotated.png`: `545K`
+
+### 2026-05-28 15:33 PT
+
+- Switched the annotated motif labels from primary TF names to HOCOMOCO14 TF family metadata when available.
+- The HOCOMOCO14 JSONL exposes `tfclass_family`, `tfclass_subfamily`, `tfclass_class`, and `tfclass_superclass`; the post-process now prefers those in that order for family-style naming.
+- Re-ran the HPC annotation and heatmap step successfully after syncing the updated script.
+- Verified the updated count matrix now uses family-oriented motif row labels such as:
+  - `COUP (NR2F) [p1]`
+  - `COUP (NR2F) [p2]`
+  - `DLX [p3]`
+  - `EBF-related [p4]`
+  - `ATF3-like [p5]`
+- Inspected the transposed z-score output and corrected its normalization axis.
+- Previous behavior: z-scores were computed on the pre-transpose matrix, which normalized each cluster across motifs.
+- Current behavior: z-scores are computed on the displayed transposed matrix, so each motif row is normalized across clusters.
+- Verified on HPC that the new z-score matrix has the expected motif-row properties:
+  - shape: `(45, 11)`
+  - global min: `-2.35734517531962`
+  - global max: `3.16227766016838`
+  - per-row means are approximately `0`
+  - per-row standard deviations are `1`

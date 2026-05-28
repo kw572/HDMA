@@ -300,22 +300,20 @@ def load_hocomoco14_annotations(annotation_jsonl: Path) -> dict[str, dict]:
             record = json.loads(line)
             motif_name = record["name"]
             tf_name = record.get("tf")
+            masterlist_info = record.get("masterlist_info", {})
+            species_info = masterlist_info.get("species", {}).get("HUMAN", {})
             human_gene_symbol = (
-                record.get("masterlist_info", {})
-                .get("species", {})
-                .get("HUMAN", {})
-                .get("gene_symbol")
+                species_info.get("gene_symbol")
             )
-            synonyms = (
-                record.get("masterlist_info", {})
-                .get("species", {})
-                .get("HUMAN", {})
-                .get("gene_synonyms", [])
-            )
+            synonyms = species_info.get("gene_synonyms", [])
             mapping[motif_name] = {
                 "tf": tf_name,
                 "gene_symbol": human_gene_symbol,
                 "gene_synonyms": synonyms,
+                "tfclass_family": masterlist_info.get("tfclass_family"),
+                "tfclass_subfamily": masterlist_info.get("tfclass_subfamily"),
+                "tfclass_class": masterlist_info.get("tfclass_class"),
+                "tfclass_superclass": masterlist_info.get("tfclass_superclass"),
                 "collection": record.get("collection"),
                 "quality": record.get("quality"),
             }
@@ -422,6 +420,7 @@ def build_annotation_table(
     annotations = manifest.copy()
     annotations["motif_matches"] = pd.NA
     annotations["motif_match_scores"] = pd.NA
+    annotations["tf_family_candidates"] = pd.NA
     annotations["tf_candidates"] = pd.NA
     annotations["annotation_status"] = "metadata_only"
     annotations["annotation_note"] = "No HOCOMOCO v14 match exceeded the annotation score threshold."
@@ -467,9 +466,19 @@ def build_annotation_table(
             ";".join(f"{score:.3f}" for score in scores) if scores else pd.NA
         )
 
+        tf_family_candidates: list[str] = []
         tf_candidates: list[str] = []
         for motif_name in matches:
             motif_meta = hocomoco_meta.get(motif_name, {})
+            for family_key in [
+                "tfclass_family",
+                "tfclass_subfamily",
+                "tfclass_class",
+                "tfclass_superclass",
+            ]:
+                family_name = motif_meta.get(family_key)
+                if family_name:
+                    tf_family_candidates.append(str(family_name))
             for candidate in [
                 motif_meta.get("gene_symbol"),
                 motif_meta.get("tf"),
@@ -478,15 +487,23 @@ def build_annotation_table(
                 if candidate:
                     tf_candidates.append(candidate)
 
+        tf_family_candidates = sorted(dict.fromkeys(tf_family_candidates))
         tf_candidates = sorted(dict.fromkeys(tf_candidates))
+        annotations.loc[mask, "tf_family_candidates"] = (
+            ";".join(tf_family_candidates) if tf_family_candidates else pd.NA
+        )
         annotations.loc[mask, "tf_candidates"] = (
             ";".join(tf_candidates) if tf_candidates else pd.NA
         )
         annotations.loc[mask, "annotation_status"] = (
-            "hocomoco14_tf_match" if tf_candidates else "hocomoco14_motif_match"
+            "hocomoco14_family_match"
+            if tf_family_candidates
+            else "hocomoco14_tf_match"
+            if tf_candidates
+            else "hocomoco14_motif_match"
         )
         annotations.loc[mask, "annotation_note"] = (
-            "Matched representative motif directly against HOCOMOCO v14 H14CORE and expanded TF names from the official annotation JSONL."
+            "Matched representative motif directly against HOCOMOCO v14 H14CORE and expanded TF family and TF names from the official annotation JSONL."
         )
 
     return annotations, metadata
@@ -494,8 +511,13 @@ def build_annotation_table(
 
 def build_pattern_label(row: pd.Series) -> str:
     pattern_idx = int(row["pattern_idx"])
+    tf_family_candidates = row.get("tf_family_candidates")
     tf_candidates = row.get("tf_candidates")
     motif_matches = row.get("motif_matches")
+
+    if pd.notna(tf_family_candidates) and str(tf_family_candidates).strip():
+        primary = str(tf_family_candidates).split(";")[0]
+        return f"{primary} [p{pattern_idx}]"
 
     if pd.notna(tf_candidates) and str(tf_candidates).strip():
         primary = str(tf_candidates).split(";")[0]
@@ -714,8 +736,7 @@ def main(args: argparse.Namespace) -> None:
     counts_df_t = counts_df.T
     counts_df_t.to_csv(args.plots_dir / "pattern_matrix_annotated_counts.tsv", sep="\t")
 
-    zscore_df = zscore_rows(counts_df)
-    zscore_df_t = zscore_df.T
+    zscore_df_t = zscore_rows(counts_df_t)
     zscore_df_t.to_csv(args.plots_dir / "pattern_matrix_annotated_znorm.tsv", sep="\t")
 
     save_clustermap(
@@ -734,8 +755,8 @@ def main(args: argparse.Namespace) -> None:
         output_path=args.plots_dir / "pattern_clustermap_znorm_annotated.png",
         width=args.heatmap_width,
         height=max(args.heatmap_height, len(zscore_df_t.index) * 0.35),
-        title="CREsted-style motif compendium clustermap (row z-score, annotated, transposed)",
-        colorbar_label="Row z-score",
+        title="CREsted-style motif compendium clustermap (motif-row z-score, annotated, transposed)",
+        colorbar_label="Motif-row z-score",
         center=0,
         pattern_ppms=pattern_ppms,
         logo_axis="row",
