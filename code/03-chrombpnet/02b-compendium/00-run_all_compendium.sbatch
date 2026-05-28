@@ -48,3 +48,4 @@ cd "${SCRIPT_DIR}"
 mkdir -p Log
 
 bash "${SCRIPT_DIR}/01-build_crested_compendium.sh"
+bash "${SCRIPT_DIR}/02-annotate_and_heatmap.sh"

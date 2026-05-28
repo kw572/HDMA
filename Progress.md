@@ -109,3 +109,90 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
   - create minimal `anndata` and `scanpy` placeholder modules for this motif-only runtime
   - register `crested.utils` as a package namespace
   - load `crested.utils._logging` directly from the CREsted checkout before loading `_tfmodisco.py`
+
+## Monitoring Notes
+
+### 2026-05-28 13:13 PT
+
+- Re-read the preserved `8998068` traceback and confirmed it is the pre-fix failure for missing `anndata`.
+- Verified that the local and HPC copies of `01-build_crested_compendium.py` now match at 344 lines and include the `loguru`, `anndata`, and `scanpy` bootstrap shims.
+- Conclusion: the next step is a fresh pilot resubmission; no additional code change is justified until a post-shim traceback or first successful processing milestone is captured.
+
+### 2026-05-28 13:15 PT
+
+- Submitted a fresh one-dataset pilot after confirming the synced runtime shims:
+  - `sbatch --export=ALL,CRESTED_ENV_NAME=modiscolite,CHROMBPNET_DATASET_FILTER_REGEX="^1_Jaw_Hyoid$" 00-run_all_compendium.sbatch`
+  - New job id: `8998081`
+- Early monitoring result:
+  - `8998081` entered `RUNNING` on `a01-04`
+  - wrapper banner printed normally with the expected `modisco_root`, `output_dir`, and `crested_repo`
+  - no immediate Python traceback appeared within the first ~40 seconds
+- This is the first pilot that has cleanly progressed past the previous import-time failures for `loguru` and `anndata`.
+- Next monitor step: wait for either the first motif-processing output or the next runtime traceback before changing code again.
+
+### 2026-05-28 13:18 PT
+
+- Final status for `8998081`:
+  - `sacct` reports `COMPLETED` with exit code `0:0`
+  - elapsed time: `00:00:43`
+- Successful runtime milestones captured from `Log/chrombpnet-crested-compendium-8998081.out`:
+  - opened `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/01-models/modisco/bias_1_Jaw_Hyoid_thresh0.4/1_Jaw_Hyoid/counts_modisco_output.h5`
+  - processed motif similarity matches for the `1_Jaw_Hyoid` pilot dataset
+  - completed post-hoc merging with `32` patterns remaining after one iteration
+- Output bundle confirmed at `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns`:
+  - `all_patterns.pkl`
+  - `classes.json`
+  - `matched_modisco_h5.json`
+  - `missing_modisco_h5.json`
+  - `pattern_manifest.tsv`
+  - `pattern_matrix.npy`
+  - `pattern_matrix.tsv`
+  - `run_summary.json`
+- `run_summary.json` confirms:
+  - `n_requested_datasets = 1`
+  - `n_matched_datasets = 1`
+  - `n_missing_datasets = 0`
+  - `n_patterns = 32`
+  - `pattern_matrix_shape = [1, 32]`
+- Conclusion: the `02b-compendium` pilot now starts cleanly and completes successfully on USC HPC for the one-dataset validation case.
+
+## Annotation And Heatmap Follow-up
+
+### 2026-05-28 13:30 PT
+
+- Added a new post-processing stage under `code/03-chrombpnet/02b-compendium`:
+  - `02-annotate_and_heatmap.sh`
+  - `02-annotate_and_heatmap.py`
+- Updated `00-run_all_compendium.sbatch` so future `02b-compendium` runs automatically:
+  - build the CREsted merged-pattern bundle
+  - annotate merged motifs from available modisco report HTMLs
+  - render a CREsted-style clustermap from the merged pattern matrix
+- Pilot post-process outputs were generated successfully on HPC at:
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/annotation/pattern_annotations.tsv`
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/annotation/annotation_summary.json`
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/pattern_clustermap.png`
+- Pilot annotation result:
+  - `annotation_mode = motif_only`
+  - `n_report_htmls = 1`
+  - `n_patterns_with_matches = 26`
+- Reason for `motif_only` rather than TF-level annotation:
+  - the run could recover motif-name matches from `motifs.html`
+  - no cached `motif_tf_collection.tsv` was available in the current HPC env, so TF alias expansion was not added yet
+
+### Error 9: annotation step failed because `pandas.read_html` required `lxml`
+
+- Symptom: `ImportError: Missing optional dependency 'lxml'. Use pip or conda to install lxml.`
+- Cause: the HPC `modiscolite` env lacked `lxml`, but `crested.tl.modisco.find_pattern_matches` relies on parsing `motifs.html` tables.
+- Resolution: patched `02-annotate_and_heatmap.py` with a BeautifulSoup-based fallback HTML table parser and injected it into the CREsted motif runtime before calling `find_pattern_matches`.
+
+### Error 10: fallback HTML parser left q-value columns as strings
+
+- Symptom: `TypeError: '<' not supported between instances of 'str' and 'float'`
+- Cause: q-value columns parsed from HTML needed explicit numeric coercion before CREsted compared them with the p-value threshold.
+- Resolution: updated the fallback parser to coerce `qval*`, `pval*`, and `num_seqlets` columns to numeric types.
+
+### Error 11: single-row pilot matrix could not be hierarchically clustered by seaborn
+
+- Symptom: `ValueError: The number of observations cannot be determined on an empty distance matrix.`
+- Cause: the one-dataset validation matrix has only one row, so row clustering is undefined.
+- Resolution: updated the clustermap renderer to automatically disable row or column clustering whenever the filtered matrix dimension is `< 2`.

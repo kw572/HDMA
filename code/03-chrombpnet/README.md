@@ -147,6 +147,8 @@ per-dataset TF-MoDISco H5 outputs from `01-train_models/06`.
 - `00`: HPC wrapper for the CREsted-style compendium run
 - `01`: collect kept datasets from `01-models/qc`, map them to `counts_modisco_output.h5`,
   run `crested.tl.modisco.process_patterns`, and write a compact merged-motif bundle
+- `02`: read the merged-pattern bundle, add motif annotations when report HTMLs are available,
+  and render a CREsted-style clustermap from the pattern matrix
 
 Outputs are written under `base_dir/02b-compendium/crested_patterns` and include:
 - `all_patterns.pkl`: CREsted merged-pattern object
@@ -154,6 +156,9 @@ Outputs are written under `base_dir/02b-compendium/crested_patterns` and include
 - `pattern_matrix.tsv` / `pattern_matrix.npy`: class-by-pattern matrix from CREsted
 - `matched_modisco_h5.json`: dataset-to-input H5 mapping
 - `run_summary.json`: run parameters and counts
+- `annotation/pattern_annotations.tsv`: merged-pattern annotations with motif/TF matches when available
+- `annotation/annotation_summary.json`: notes on whether full motif annotation was possible
+- `plots/pattern_clustermap.png`: CREsted-style clustered heatmap of merged motif importance
 
 ### USC CARC notes for `02b-compendium`
 
@@ -165,6 +170,7 @@ Outputs are written under `base_dir/02b-compendium/crested_patterns` and include
   - `CRESTED_VENV`
   - `CRESTED_PYTHON_BIN`
   - `CRESTED_REPO` if CREsted is available as a checkout rather than an installed package
+- Optional motif-to-TF annotation can also use `CRESTED_MOTIF_TO_TF_FILE` if you want to point at a cached `motif_tf_collection.tsv` explicitly.
 - Typical submit pattern:
   - `sbatch code/03-chrombpnet/02b-compendium/00-run_all_compendium.sbatch`
   - `sbatch --export=ALL,CHROMBPNET_DATASET_FILTER_REGEX='^(1_Jaw_Hyoid|4_Frontonasal)$' code/03-chrombpnet/02b-compendium/00-run_all_compendium.sbatch`
