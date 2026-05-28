@@ -78,3 +78,10 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
 - Symptom: `ImportError: Unable to import 'crested'. Activate an environment with CREsted installed or set CRESTED_REPO to a CREsted checkout.`
 - Cause: even though a CREsted checkout exists at `/scratch1/kuangtse/code/CREsted`, the job runtime did not end up with a usable `CRESTED_REPO` path.
 - Resolution: updated `01-build_crested_compendium.sh` to auto-detect common HPC CREsted checkout paths such as `/scratch1/$USER/code/CREsted` and export `CRESTED_REPO` before launching Python.
+
+### Error 5: CREsted checkout path was available, but bootstrap still required a successful top-level package import
+
+- Job: `8997741`
+- Symptom: job log showed `crested_repo=/scratch1/kuangtse/code/CREsted`, followed by the same `Unable to import crested` failure.
+- Cause: the Python bootstrap still tried `import crested` after adding the checkout `src` path, and the `modiscolite` environment is lighter than a full CREsted install.
+- Resolution: changed `01-build_crested_compendium.py` so checkout discovery only requires `src/crested` to exist. If the top-level import still fails, the script now creates a minimal `crested` package namespace pointing at the checkout and lets the motif module load directly from source.

@@ -41,11 +41,8 @@ def bootstrap_crested() -> Path | None:
         src_dir = repo_root / "src"
         if src_dir.exists():
             sys.path.insert(0, str(src_dir))
-            try:
-                import crested  # noqa: F401
+            if (src_dir / "crested").exists():
                 return repo_root
-            except ImportError:
-                continue
 
     raise ImportError(
         "Unable to import `crested`. Activate an environment with CREsted installed "
@@ -54,7 +51,15 @@ def bootstrap_crested() -> Path | None:
 
 
 CRESTED_REPO_ROOT = bootstrap_crested()
-import crested  # noqa: E402
+try:
+    import crested  # type: ignore  # noqa: E402
+except ImportError:
+    if CRESTED_REPO_ROOT is None:
+        raise
+
+    crested = types.ModuleType("crested")
+    crested.__path__ = [str(CRESTED_REPO_ROOT / "src" / "crested")]
+    sys.modules["crested"] = crested
 
 
 def load_module_from_path(module_name: str, module_path: Path):
