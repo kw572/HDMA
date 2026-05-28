@@ -29,6 +29,14 @@ HOCOMOCO14_ANNOTATION_URL = (
     "https://hocomoco14.autosome.org/final_bundle/hocomoco14/H14CORE/"
     "H14CORE_annotation.jsonl"
 )
+JASPAR2026_VERTEBRATES_MEME_URL = (
+    "https://jaspar.elixir.no/download/data/2026/CORE/"
+    "JASPAR2026_CORE_vertebrates_non-redundant_pfms_meme.txt"
+)
+JASPAR2026_CORE_METADATA_URL = (
+    "https://mencius.uio.no/JASPAR/JASPAR_metadata/2026/"
+    "ultimate_metadata_table_CORE.tsv"
+)
 
 
 def bootstrap_crested() -> Path | None:
@@ -320,24 +328,56 @@ def load_hocomoco14_annotations(annotation_jsonl: Path) -> dict[str, dict]:
     return mapping
 
 
-def parse_hocomoco14_meme(meme_path: Path) -> list[dict]:
+def load_jaspar2026_metadata(metadata_tsv: Path) -> dict[str, dict]:
+    table = pd.read_csv(metadata_tsv, sep="\t")
+    mapping: dict[str, dict] = {}
+    for _, row in table.iterrows():
+        if str(row.get("collection", "")).strip().upper() != "CORE":
+            continue
+        matrix_id = str(row["matrix_id"]).strip()
+        if not matrix_id:
+            continue
+        tf_name = str(row.get("name", "")).strip() or None
+        family = str(row.get("family", "")).strip() or None
+        tf_class = str(row.get("class", "")).strip() or None
+        species = str(row.get("species", "")).strip() or None
+        tax_group = str(row.get("tax_group", "")).strip() or None
+        mapping[matrix_id] = {
+            "tf": tf_name,
+            "gene_symbol": tf_name,
+            "gene_synonyms": [],
+            "tfclass_family": family,
+            "tfclass_subfamily": None,
+            "tfclass_class": tf_class,
+            "tfclass_superclass": None,
+            "collection": row.get("collection"),
+            "quality": None,
+            "species": species,
+            "tax_group": tax_group,
+        }
+    return mapping
+
+
+def parse_meme_database(meme_path: Path) -> list[dict]:
     motifs: list[dict] = []
+    current_id: str | None = None
     current_name: str | None = None
     current_ppm: list[list[float]] = []
     expected_rows = 0
 
     def finalize_current():
-        nonlocal current_name, current_ppm, expected_rows
-        if current_name is None or not current_ppm:
+        nonlocal current_id, current_name, current_ppm, expected_rows
+        if current_id is None or not current_ppm:
             return
         ppm = np.array(current_ppm, dtype=float)
         motifs.append(
             {
-                "id": current_name,
-                "name": current_name,
+                "id": current_id,
+                "name": current_name or current_id,
                 "ppm": ppm,
             }
         )
+        current_id = None
         current_name = None
         current_ppm = []
         expected_rows = 0
@@ -349,14 +389,16 @@ def parse_hocomoco14_meme(meme_path: Path) -> list[dict]:
                 continue
             if line.startswith("MOTIF "):
                 finalize_current()
-                current_name = line.split(maxsplit=1)[1]
+                parts = line.split(maxsplit=2)
+                current_id = parts[1] if len(parts) > 1 else None
+                current_name = parts[2] if len(parts) > 2 else current_id
                 continue
             if line.startswith("letter-probability matrix:"):
                 width_match = re.search(r"\bw=\s*(\d+)", line)
                 if width_match:
                     expected_rows = int(width_match.group(1))
                 continue
-            if current_name is not None and expected_rows > 0:
+            if current_id is not None and expected_rows > 0:
                 if line.startswith("URL "):
                     finalize_current()
                     continue
@@ -412,6 +454,7 @@ def build_annotation_table(
     annotation_dir: Path,
 ) -> tuple[pd.DataFrame, dict]:
     del matched_modisco_h5, annotation_pval_threshold
+    annotation_db = os.environ.get("CRESTED_ANNOTATION_DB", "hocomoco14").strip().lower()
     metadata = {
         "annotation_mode": "metadata_only",
         "n_patterns_with_matches": 0,
@@ -425,37 +468,57 @@ def build_annotation_table(
     annotations["annotation_status"] = "metadata_only"
     annotations["annotation_note"] = "No HOCOMOCO v14 match exceeded the annotation score threshold."
 
-    cache_dir = annotation_dir / "hocomoco14_cache"
-    meme_path = download_if_missing(
-        os.environ.get("HOCOMOCO14_MEME_URL", HOCOMOCO14_MEME_URL),
-        cache_dir / "H14CORE_meme_format.meme",
-    )
-    annotation_jsonl = download_if_missing(
-        os.environ.get("HOCOMOCO14_ANNOTATION_URL", HOCOMOCO14_ANNOTATION_URL),
-        cache_dir / "H14CORE_annotation.jsonl",
-    )
+    if annotation_db == "jaspar2026":
+        cache_dir = annotation_dir / "jaspar2026_cache"
+        meme_path = download_if_missing(
+            os.environ.get("JASPAR2026_MEME_URL", JASPAR2026_VERTEBRATES_MEME_URL),
+            cache_dir / "JASPAR2026_CORE_vertebrates_non-redundant_pfms_meme.txt",
+        )
+        metadata_path = download_if_missing(
+            os.environ.get("JASPAR2026_METADATA_URL", JASPAR2026_CORE_METADATA_URL),
+            cache_dir / "JASPAR2026_CORE_metadata.tsv",
+        )
+        annotation_meta = load_jaspar2026_metadata(metadata_path)
+        annotation_patterns = parse_meme_database(meme_path)
+        metadata["annotation_mode"] = "jaspar2026"
+        metadata["jaspar2026_meme_url"] = os.environ.get("JASPAR2026_MEME_URL", JASPAR2026_VERTEBRATES_MEME_URL)
+        metadata["jaspar2026_metadata_url"] = os.environ.get("JASPAR2026_METADATA_URL", JASPAR2026_CORE_METADATA_URL)
+        metadata["annotation_min_score"] = annotation_min_score
+        metadata["jaspar2026_meme_file"] = str(meme_path)
+        metadata["jaspar2026_metadata_file"] = str(metadata_path)
+        metadata["n_jaspar2026_motifs"] = len(annotation_patterns)
+    else:
+        cache_dir = annotation_dir / "hocomoco14_cache"
+        meme_path = download_if_missing(
+            os.environ.get("HOCOMOCO14_MEME_URL", HOCOMOCO14_MEME_URL),
+            cache_dir / "H14CORE_meme_format.meme",
+        )
+        annotation_jsonl = download_if_missing(
+            os.environ.get("HOCOMOCO14_ANNOTATION_URL", HOCOMOCO14_ANNOTATION_URL),
+            cache_dir / "H14CORE_annotation.jsonl",
+        )
+        annotation_meta = load_hocomoco14_annotations(annotation_jsonl)
+        annotation_patterns = parse_meme_database(meme_path)
+        metadata["annotation_mode"] = "hocomoco14"
+        metadata["hocomoco14_meme_url"] = os.environ.get("HOCOMOCO14_MEME_URL", HOCOMOCO14_MEME_URL)
+        metadata["hocomoco14_annotation_url"] = os.environ.get("HOCOMOCO14_ANNOTATION_URL", HOCOMOCO14_ANNOTATION_URL)
+        metadata["annotation_min_score"] = annotation_min_score
+        metadata["hocomoco14_meme_file"] = str(meme_path)
+        metadata["hocomoco14_annotation_file"] = str(annotation_jsonl)
+        metadata["n_hocomoco14_motifs"] = len(annotation_patterns)
 
-    hocomoco_meta = load_hocomoco14_annotations(annotation_jsonl)
-    hocomoco_patterns = parse_hocomoco14_meme(meme_path)
     modisco_utils_module = sys.modules["crested.tl.modisco._modisco_utils"]
     pattern_match_dict = score_hocomoco14_matches(
         all_patterns=all_patterns,
         modisco_utils_module=modisco_utils_module,
-        hocomoco_patterns=hocomoco_patterns,
+        hocomoco_patterns=annotation_patterns,
         min_score=annotation_min_score,
     )
 
-    metadata["annotation_mode"] = "hocomoco14"
-    metadata["hocomoco14_meme_url"] = os.environ.get("HOCOMOCO14_MEME_URL", HOCOMOCO14_MEME_URL)
-    metadata["hocomoco14_annotation_url"] = os.environ.get("HOCOMOCO14_ANNOTATION_URL", HOCOMOCO14_ANNOTATION_URL)
-    metadata["annotation_min_score"] = annotation_min_score
-    metadata["hocomoco14_meme_file"] = str(meme_path)
-    metadata["hocomoco14_annotation_file"] = str(annotation_jsonl)
-    metadata["n_hocomoco14_motifs"] = len(hocomoco_patterns)
     metadata["n_patterns_with_matches"] = len(pattern_match_dict)
 
     annotations["annotation_status"] = "no_match"
-    annotations["annotation_note"] = "No HOCOMOCO v14 match exceeded the annotation score threshold."
+    annotations["annotation_note"] = "No motif-database match exceeded the annotation score threshold."
 
     for pattern_idx, match_info in pattern_match_dict.items():
         mask = annotations["pattern_idx"] == int(pattern_idx)
@@ -469,7 +532,7 @@ def build_annotation_table(
         tf_family_candidates: list[str] = []
         tf_candidates: list[str] = []
         for motif_name in matches:
-            motif_meta = hocomoco_meta.get(motif_name, {})
+            motif_meta = annotation_meta.get(motif_name, {})
             for family_key in [
                 "tfclass_family",
                 "tfclass_subfamily",
@@ -503,8 +566,31 @@ def build_annotation_table(
             else "hocomoco14_motif_match"
         )
         annotations.loc[mask, "annotation_note"] = (
-            "Matched representative motif directly against HOCOMOCO v14 H14CORE and expanded TF family and TF names from the official annotation JSONL."
+            "Matched representative motif directly against the configured motif database and expanded TF family and TF names from the official release metadata."
         )
+
+        if annotation_db == "jaspar2026":
+            annotations.loc[mask, "annotation_status"] = (
+                "jaspar2026_family_match"
+                if tf_family_candidates
+                else "jaspar2026_tf_match"
+                if tf_candidates
+                else "jaspar2026_motif_match"
+            )
+            annotations.loc[mask, "annotation_note"] = (
+                "Matched representative motif directly against JASPAR 2026 CORE vertebrate PFMs and expanded TF family and TF names from the official JASPAR 2026 CORE metadata table."
+            )
+        else:
+            annotations.loc[mask, "annotation_status"] = (
+                "hocomoco14_family_match"
+                if tf_family_candidates
+                else "hocomoco14_tf_match"
+                if tf_candidates
+                else "hocomoco14_motif_match"
+            )
+            annotations.loc[mask, "annotation_note"] = (
+                "Matched representative motif directly against HOCOMOCO v14 H14CORE and expanded TF family and TF names from the official annotation JSONL."
+            )
 
     return annotations, metadata
 

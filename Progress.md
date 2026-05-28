@@ -411,3 +411,23 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
 - Refreshed output PNG sizes after the tighter-width rerender:
   - `pattern_clustermap_counts_annotated.png`: `509K`
   - `pattern_clustermap_znorm_annotated.png`: `505K`
+
+### 2026-05-28 15:45 PT
+
+- Added a second motif-annotation backend for `02b-compendium` so the post-process can annotate against JASPAR 2026 in addition to HOCOMOCO v14.
+- Updated the MEME parser to preserve separate motif IDs and names, which is required for JASPAR headers of the form `MOTIF <matrix_id> <TF name>`.
+- Re-ran the HPC annotation and heatmap step with:
+  - `CRESTED_ANNOTATION_DB=jaspar2026`
+- Verified the run completed successfully and the output summary now reports:
+  - `annotation_mode: jaspar2026`
+  - `n_jaspar2026_motifs: 1019`
+  - `n_patterns_with_matches: 27`
+- Official JASPAR 2026 sources used for this rerun:
+  - MEME bundle: `https://jaspar.elixir.no/download/data/2026/CORE/JASPAR2026_CORE_vertebrates_non-redundant_pfms_meme.txt`
+  - CORE metadata table: `https://mencius.uio.no/JASPAR/JASPAR_metadata/2026/ultimate_metadata_table_CORE.tsv`
+- Verified updated annotated motif row labels in the counts matrix now reflect JASPAR 2026 family/class metadata, for example:
+  - `FTZF1-related (NR5A) [p1]`
+  - `Nuclear receptors with C4 zinc fingers [p2]`
+  - `HOX [p3]`
+  - `C2H2 zinc finger factors [p4]`
+  - `Basic leucine zipper factors (bZIP) [p5]`
