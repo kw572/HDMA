@@ -295,3 +295,35 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
 - Symptom: `ValueError: invalid literal for int() with base 10: ''`
 - Cause: the HOCOMOCO14 MEME header uses `w= 10` formatting, while the first parser version assumed `w=10` without whitespace.
 - Resolution: updated the parser to extract motif width with a regex that tolerates optional spaces after `w=`.
+
+## Annotated Heatmap Outputs
+
+### 2026-05-28 14:59 PT
+
+- Updated `02-annotate_and_heatmap.py` to emit two matrix views and two heatmaps using annotated motif names as column labels:
+  - raw counts / motif-importance view
+  - row-wise z-normalized view
+- The column labels now prioritize:
+  - first HOCOMOCO14 TF candidate
+  - otherwise first matched motif name
+  - otherwise representative pattern id
+  - and append `[p<pattern_idx>]` to preserve uniqueness
+- Re-ran `02-annotate_and_heatmap.sh` successfully on HPC.
+- New plot/matrix outputs created at `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/`:
+  - `pattern_matrix_annotated_counts.tsv`
+  - `pattern_matrix_annotated_znorm.tsv`
+  - `pattern_clustermap_counts_annotated.png`
+  - `pattern_clustermap_znorm_annotated.png`
+- Verified example annotated column names in the counts/z-normalized matrices such as:
+  - `EAR2 [p1]`
+  - `ARP1 [p2]`
+  - `DLX1 [p3]`
+  - `COE2 [p4]`
+  - `ATF3 [p5]`
+  - `BORIS [p10]`
+
+### Error 13: annotated clustermap refactor briefly left a stale `classes` reference
+
+- Symptom: `NameError: name 'classes' is not defined`
+- Cause: `save_clustermap()` was refactored to accept a labeled DataFrame, but one `seaborn.clustermap()` argument still referenced the old outer-scope `classes` variable.
+- Resolution: changed the plotter to use `data.index.tolist()` and the requested `center` argument directly.

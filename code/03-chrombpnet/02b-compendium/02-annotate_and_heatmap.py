@@ -492,14 +492,29 @@ def build_annotation_table(
     return annotations, metadata
 
 
-def save_clustermap(
+def build_pattern_label(row: pd.Series) -> str:
+    pattern_idx = int(row["pattern_idx"])
+    tf_candidates = row.get("tf_candidates")
+    motif_matches = row.get("motif_matches")
+
+    if pd.notna(tf_candidates) and str(tf_candidates).strip():
+        primary = str(tf_candidates).split(";")[0]
+        return f"{primary} [p{pattern_idx}]"
+
+    if pd.notna(motif_matches) and str(motif_matches).strip():
+        primary = str(motif_matches).split(";")[0]
+        return f"{primary} [p{pattern_idx}]"
+
+    representative_id = str(row.get("representative_id", f"pattern_{pattern_idx}"))
+    return f"{representative_id} [p{pattern_idx}]"
+
+
+def build_labeled_matrix(
     pattern_matrix: np.ndarray,
     classes: list[str],
-    output_path: Path,
+    annotations: pd.DataFrame,
     importance_threshold: float,
-    width: float,
-    height: float,
-) -> None:
+) -> pd.DataFrame:
     max_importance = np.max(np.abs(pattern_matrix), axis=0)
     keep = max_importance > importance_threshold
     filtered = pattern_matrix[:, keep]
@@ -509,17 +524,44 @@ def save_clustermap(
             "No patterns remain after importance-threshold filtering; lower CRESTED_HEATMAP_IMPORTANCE_THRESHOLD."
         )
 
-    data = pd.DataFrame(filtered, index=classes)
+    kept_pattern_indices = np.where(keep)[0]
+    annotation_lookup = (
+        annotations.set_index("pattern_idx", drop=False)
+        .reindex(kept_pattern_indices)
+        .reset_index(drop=True)
+    )
+    columns = [build_pattern_label(row) for _, row in annotation_lookup.iterrows()]
+    return pd.DataFrame(filtered, index=classes, columns=columns)
+
+
+def zscore_rows(data: pd.DataFrame) -> pd.DataFrame:
+    values = data.to_numpy(dtype=float)
+    means = values.mean(axis=1, keepdims=True)
+    stds = values.std(axis=1, keepdims=True)
+    stds[stds == 0] = 1.0
+    zvalues = (values - means) / stds
+    return pd.DataFrame(zvalues, index=data.index, columns=data.columns)
+
+
+def save_clustermap(
+    data: pd.DataFrame,
+    output_path: Path,
+    width: float,
+    height: float,
+    title: str,
+    colorbar_label: str,
+    center: float = 0,
+) -> None:
     sns.set_theme(style="white")
     row_cluster = data.shape[0] > 1
     col_cluster = data.shape[1] > 1
     grid = sns.clustermap(
         data,
         cmap="coolwarm",
-        center=0,
+        center=center,
         method="average",
         figsize=(width, height),
-        yticklabels=classes,
+        yticklabels=data.index.tolist(),
         xticklabels=True,
         dendrogram_ratio=(0.05, 0.2),
         cbar_pos=(1.05, 0.4, 0.01, 0.3),
@@ -527,11 +569,17 @@ def save_clustermap(
         col_cluster=col_cluster,
     )
     colorbar = grid.ax_heatmap.collections[0].colorbar
-    colorbar.set_label("Motif importance", rotation=270, labelpad=20)
-    grid.ax_heatmap.set_xlabel("Merged pattern index")
+    colorbar.set_label(colorbar_label, rotation=270, labelpad=20)
+    grid.ax_heatmap.set_xlabel("Annotated motif")
     grid.ax_heatmap.set_ylabel("Class")
     grid.ax_heatmap.set_yticklabels(grid.ax_heatmap.get_yticklabels(), rotation=0)
-    grid.fig.suptitle("CREsted-style motif compendium clustermap", y=1.02)
+    grid.ax_heatmap.set_xticklabels(
+        grid.ax_heatmap.get_xticklabels(),
+        rotation=90,
+        ha="center",
+        fontsize=8,
+    )
+    grid.fig.suptitle(title, y=1.02)
     grid.savefig(output_path, bbox_inches="tight")
     plt.close(grid.fig)
 
@@ -560,20 +608,44 @@ def main(args: argparse.Namespace) -> None:
     with (args.annotation_dir / "annotation_summary.json").open("w") as handle:
         json.dump(annotation_metadata, handle, indent=2)
 
-    save_clustermap(
+    counts_df = build_labeled_matrix(
         pattern_matrix=pattern_matrix,
         classes=classes,
-        output_path=args.plots_dir / "pattern_clustermap.png",
+        annotations=annotations,
         importance_threshold=args.importance_threshold,
+    )
+    counts_df.to_csv(args.plots_dir / "pattern_matrix_annotated_counts.tsv", sep="\t")
+
+    zscore_df = zscore_rows(counts_df)
+    zscore_df.to_csv(args.plots_dir / "pattern_matrix_annotated_znorm.tsv", sep="\t")
+
+    save_clustermap(
+        data=counts_df,
+        output_path=args.plots_dir / "pattern_clustermap_counts_annotated.png",
         width=args.heatmap_width,
         height=args.heatmap_height,
+        title="CREsted-style motif compendium clustermap (counts, annotated)",
+        colorbar_label="Motif count / importance",
+        center=0,
+    )
+    save_clustermap(
+        data=zscore_df,
+        output_path=args.plots_dir / "pattern_clustermap_znorm_annotated.png",
+        width=args.heatmap_width,
+        height=args.heatmap_height,
+        title="CREsted-style motif compendium clustermap (row z-score, annotated)",
+        colorbar_label="Row z-score",
+        center=0,
     )
 
     print(json.dumps(
         {
             "annotation_table": str(args.annotation_dir / "pattern_annotations.tsv"),
             "annotation_summary": str(args.annotation_dir / "annotation_summary.json"),
-            "clustermap_png": str(args.plots_dir / "pattern_clustermap.png"),
+            "counts_tsv": str(args.plots_dir / "pattern_matrix_annotated_counts.tsv"),
+            "znorm_tsv": str(args.plots_dir / "pattern_matrix_annotated_znorm.tsv"),
+            "counts_clustermap_png": str(args.plots_dir / "pattern_clustermap_counts_annotated.png"),
+            "znorm_clustermap_png": str(args.plots_dir / "pattern_clustermap_znorm_annotated.png"),
             "n_patterns": int(pattern_matrix.shape[1]),
             "n_classes": int(pattern_matrix.shape[0]),
             "annotation_mode": annotation_metadata["annotation_mode"],
