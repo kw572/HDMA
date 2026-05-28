@@ -138,6 +138,38 @@ This produces one MoDISco h5 object per supercluster, containing merged, non-red
 - `07`: run NucleoATAC per cell type
 
 
+## 2b. CREsted-style motif compendium, `02b-compendium`
+
+This is a lighter alternative to `02-compendium` that merges motifs across
+datasets using CREsted's motif-processing utilities directly on the final
+per-dataset TF-MoDISco H5 outputs from `01-train_models/06`.
+
+- `00`: HPC wrapper for the CREsted-style compendium run
+- `01`: collect kept datasets from `01-models/qc`, map them to `counts_modisco_output.h5`,
+  run `crested.tl.modisco.process_patterns`, and write a compact merged-motif bundle
+
+Outputs are written under `base_dir/02b-compendium/crested_patterns` and include:
+- `all_patterns.pkl`: CREsted merged-pattern object
+- `pattern_manifest.tsv`: one row per merged pattern with representative motif metadata
+- `pattern_matrix.tsv` / `pattern_matrix.npy`: class-by-pattern matrix from CREsted
+- `matched_modisco_h5.json`: dataset-to-input H5 mapping
+- `run_summary.json`: run parameters and counts
+
+### USC CARC notes for `02b-compendium`
+
+- The wrapper expects a Python environment with `numpy`, `pandas`, `modiscolite`, and `memelite` available.
+- By default it activates `conda activate modiscolite`, assuming CREsted is available via `CRESTED_REPO` or already installed in that environment.
+- If you prefer using an installed CREsted environment, make sure it also has motif dependencies and a backend-capable Keras stack available.
+- You can override the Python environment with:
+  - `CRESTED_ENV_NAME`
+  - `CRESTED_VENV`
+  - `CRESTED_PYTHON_BIN`
+  - `CRESTED_REPO` if CREsted is available as a checkout rather than an installed package
+- Typical submit pattern:
+  - `sbatch code/03-chrombpnet/02b-compendium/00-run_all_compendium.sbatch`
+  - `sbatch --export=ALL,CHROMBPNET_DATASET_FILTER_REGEX='^(1_Jaw_Hyoid|4_Frontonasal)$' code/03-chrombpnet/02b-compendium/00-run_all_compendium.sbatch`
+
+
 ## 3. Analysis of TF binding site syntax, `03-syntax`
 
 - `00`: compute the mean and summed importance score for all trimmed CWMs
