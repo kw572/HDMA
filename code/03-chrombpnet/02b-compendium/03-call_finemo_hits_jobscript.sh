@@ -33,6 +33,15 @@ else
   conda activate finemo
 fi
 
+FINEMO_BIN="${FINEMO_VENV}/bin/finemo"
+PYTHON_BIN="${FINEMO_VENV}/bin/python"
+if [[ ! -x "${FINEMO_BIN}" ]]; then
+  FINEMO_BIN="$(command -v finemo)"
+fi
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+  PYTHON_BIN="$(command -v python)"
+fi
+
 load_optional_module() {
   local mod="$1"
   [[ -n "${mod}" ]] || return 0
@@ -71,12 +80,12 @@ echo "@ alpha ${alpha}"
 finemo_npz="${out_dir%/}/intermediate_inputs.npz"
 
 if [[ ! -f "${out_dir%/}/hits.tsv" ]]; then
-  finemo extract-regions-chrombpnet-h5 \
+  "${FINEMO_BIN}" extract-regions-chrombpnet-h5 \
     --h5s "${shaps_h5}" \
     --out-path "${finemo_npz}" \
     --region-width 1000
 
-  finemo call-hits \
+  "${FINEMO_BIN}" call-hits \
     -r "${finemo_npz}" \
     -m "${modisco_h5}" \
     -p "${peaks_bed}" \
@@ -84,7 +93,7 @@ if [[ ! -f "${out_dir%/}/hits.tsv" ]]; then
     -o "${out_dir}" \
     -b 200
 
-  finemo report \
+  "${FINEMO_BIN}" report \
     -r "${finemo_npz}" \
     -H "${out_dir}/hits.tsv" \
     -p "${peaks_bed}" \
@@ -101,7 +110,7 @@ if [[ -f "${out_dir}/hits.bed" && ! -f "${out_dir}/hits.bed.gz" ]]; then
   tabix -p bed "${out_dir}/hits.bed.gz"
 fi
 
-python "${SCRIPT_DIR}/03-map_finemo_to_compendium.py" \
+"${PYTHON_BIN}" "${SCRIPT_DIR}/03-map_finemo_to_compendium.py" \
   --compendium-dir "${compendium_dir}" \
   --dataset "${dataset}" \
   --hits-tsv "${out_dir}/hits.tsv" \

@@ -486,3 +486,10 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
   - `mkdir: cannot create directory '/var/spool/slurm/d/job9016420/Log': Permission denied`
 - Cause: the Fi-NeMo batch script used `BASH_SOURCE[0]` to derive `SCRIPT_DIR`, but under `sbatch` that resolved to Slurm’s spool copy of the script instead of the real `02b-compendium` directory.
 - Resolution: changed `03-call_finemo_hits_jobscript.sh` to anchor `SCRIPT_DIR` and `Log/` on `SLURM_SUBMIT_DIR` instead, which points back to the real project checkout submitted by the wrapper.
+
+### Error 16: corrected Fi-NeMo pilot still did not expose `finemo` on PATH
+
+- Symptom: resubmitted pilot job `9016424` failed immediately with:
+  - `/var/spool/slurm/d/job9016424/slurm_script: line 74: finemo: command not found`
+- Cause: even after activating the preferred Fi-NeMo venv, the non-interactive Slurm job environment did not reliably expose the `finemo` console script on `PATH`.
+- Resolution: updated `03-call_finemo_hits_jobscript.sh` to resolve and call `FINEMO_BIN` and `PYTHON_BIN` explicitly from the selected venv (`/scratch1/${USER}/venvs/finemo310` by default), with `command -v` fallbacks only if those explicit paths are unavailable.
