@@ -48,13 +48,33 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
 
 ## HPC Run Log
 
-- Pending first login, sync, submit, and monitor cycle.
+### 2026-05-28 pilot job `8997738`
+
+- Checkout found at `/scratch1/kuangtse/HDMA`
+- CREsted checkout found separately at `/scratch1/kuangtse/code/CREsted`
+- HPC branch `mac-preprocess` could not fast-forward because the run checkout has diverged local commits and unrelated modified files
+- To avoid overwriting that worktree, synced only `code/03-chrombpnet/02b-compendium/` into the existing checkout with `rsync`
+- Submitted pilot job:
+  - `sbatch --export=ALL,CRESTED_ENV_NAME=modiscolite,CRESTED_REPO=/scratch1/kuangtse/code/CREsted,CHROMBPNET_DATASET_FILTER_REGEX="^1_Jaw_Hyoid$" 00-run_all_compendium.sbatch`
 
 ## Next Actions
 
-- Commit and push the new pipeline files.
-- Log into USC HPC.
-- Update the HPC checkout from GitHub.
-- Submit `02b-compendium/00-run_all_compendium.sbatch`.
-- Record the first scheduler/runtime error and fix it.
-- Keep iterating until the job starts cleanly.
+- Patch wrapper to auto-discover CREsted on HPC.
+- Resync `02b-compendium` into the HPC checkout.
+- Resubmit pilot job.
+- Record the next runtime error or first successful motif-processing step.
+
+## Additional Errors And Fixes
+
+### Error 3: HPC checkout could not fast-forward to pushed branch
+
+- Symptom: `fatal: Not possible to fast-forward, aborting.`
+- Cause: `/scratch1/kuangtse/HDMA` is a dirty and diverged run checkout with local commits and many unrelated modified files.
+- Resolution: avoided merge/rebase in-place and synced only the new `02b-compendium` folder into that run checkout.
+
+### Error 4: pilot HPC job could not locate CREsted at runtime
+
+- Job: `8997738`
+- Symptom: `ImportError: Unable to import 'crested'. Activate an environment with CREsted installed or set CRESTED_REPO to a CREsted checkout.`
+- Cause: even though a CREsted checkout exists at `/scratch1/kuangtse/code/CREsted`, the job runtime did not end up with a usable `CRESTED_REPO` path.
+- Resolution: updated `01-build_crested_compendium.sh` to auto-detect common HPC CREsted checkout paths such as `/scratch1/$USER/code/CREsted` and export `CRESTED_REPO` before launching Python.

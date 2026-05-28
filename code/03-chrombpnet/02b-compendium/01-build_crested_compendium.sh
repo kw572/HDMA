@@ -52,6 +52,27 @@ activate_python() {
   PYTHON_BIN="python"
 }
 
+resolve_crested_repo() {
+  local candidate
+  if [[ -n "${CRESTED_REPO:-}" && -d "${CRESTED_REPO}" ]]; then
+    export CRESTED_REPO
+    return 0
+  fi
+
+  for candidate in \
+    "/scratch1/${USER}/code/CREsted" \
+    "${HOME}/code/CREsted" \
+    "${HOME}/projects/CREsted"
+  do
+    if [[ -d "${candidate}/src/crested" ]]; then
+      export CRESTED_REPO="${candidate}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 PRE_MODULES="${PRE_MODULES:-legacy/CentOS7 gcc/8.3.0}"
 load_requested_modules "${PRE_MODULES}"
 
@@ -69,10 +90,12 @@ WRITE_SIMILARITY_MATRIX="${CRESTED_WRITE_SIMILARITY_MATRIX:-0}"
 mkdir -p "${OUTPUT_DIR}"
 
 activate_python
+resolve_crested_repo || true
 
 echo "[$(timestamp)] ===== CREsted-style Compendium ====="
 echo "[$(timestamp)] modisco_root=${modisco_dir%/}/bias_${BIAS_PARAMS}"
 echo "[$(timestamp)] output_dir=${OUTPUT_DIR}"
+echo "[$(timestamp)] crested_repo=${CRESTED_REPO:-<unset>}"
 echo "[$(timestamp)] dataset_filter=${DATASET_FILTER_REGEX:-<all datasets>}"
 echo "[$(timestamp)] sim_threshold=${SIM_THRESHOLD}"
 echo "[$(timestamp)] trim_ic_threshold=${TRIM_IC_THRESHOLD}"
