@@ -8,8 +8,10 @@ import json
 import logging
 import os
 import pickle
+import re
 import sys
 import types
+import urllib.request
 from pathlib import Path
 
 import matplotlib
@@ -18,6 +20,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+
+HOCOMOCO14_MEME_URL = (
+    "https://hocomoco14.autosome.org/final_bundle/hocomoco14/H14CORE/"
+    "formatted_motifs/H14CORE_meme_format.meme"
+)
+HOCOMOCO14_ANNOTATION_URL = (
+    "https://hocomoco14.autosome.org/final_bundle/hocomoco14/H14CORE/"
+    "H14CORE_annotation.jsonl"
+)
 
 
 def bootstrap_crested() -> Path | None:
@@ -219,6 +230,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--heatmap-width", default=25.0, type=float)
     parser.add_argument("--heatmap-height", default=8.0, type=float)
     parser.add_argument("--annotation-pval-threshold", default=0.05, type=float)
+    parser.add_argument("--annotation-min-score", default=6.0, type=float)
     return parser.parse_args()
 
 
@@ -273,33 +285,123 @@ def build_html_paths_for_patterns(all_patterns: dict, html_paths_by_class: dict[
     return pattern_html_paths
 
 
-def find_motif_to_tf_file() -> Path | None:
-    env_path = os.environ.get("CRESTED_MOTIF_TO_TF_FILE")
-    if env_path and Path(env_path).exists():
-        return Path(env_path)
-
-    candidate_paths = [
-        Path.home() / ".cache" / "crested" / "motif_db" / "motif_tf_collection.tsv",
-        Path.home() / ".local" / "share" / "crested" / "motif_db" / "motif_tf_collection.tsv",
-    ]
-    for candidate in candidate_paths:
-        if candidate.exists():
-            return candidate
-    return None
+def download_if_missing(url: str, dest: Path) -> Path:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() and dest.stat().st_size > 0:
+        return dest
+    urllib.request.urlretrieve(url, dest)
+    return dest
 
 
-def choose_annotation_columns(motif_to_tf_df: pd.DataFrame) -> list[str]:
-    preferred = [
-        "Direct_annot",
-        "Motif_similarity_annot",
-        "Orthology_annot",
-        "TF",
-        "Gene",
-    ]
-    cols = [col for col in preferred if col in motif_to_tf_df.columns]
-    if cols:
-        return cols
-    return [col for col in motif_to_tf_df.columns if "annot" in col.lower()]
+def load_hocomoco14_annotations(annotation_jsonl: Path) -> dict[str, dict]:
+    mapping: dict[str, dict] = {}
+    with annotation_jsonl.open() as handle:
+        for line in handle:
+            record = json.loads(line)
+            motif_name = record["name"]
+            tf_name = record.get("tf")
+            human_gene_symbol = (
+                record.get("masterlist_info", {})
+                .get("species", {})
+                .get("HUMAN", {})
+                .get("gene_symbol")
+            )
+            synonyms = (
+                record.get("masterlist_info", {})
+                .get("species", {})
+                .get("HUMAN", {})
+                .get("gene_synonyms", [])
+            )
+            mapping[motif_name] = {
+                "tf": tf_name,
+                "gene_symbol": human_gene_symbol,
+                "gene_synonyms": synonyms,
+                "collection": record.get("collection"),
+                "quality": record.get("quality"),
+            }
+    return mapping
+
+
+def parse_hocomoco14_meme(meme_path: Path) -> list[dict]:
+    motifs: list[dict] = []
+    current_name: str | None = None
+    current_ppm: list[list[float]] = []
+    expected_rows = 0
+
+    def finalize_current():
+        nonlocal current_name, current_ppm, expected_rows
+        if current_name is None or not current_ppm:
+            return
+        ppm = np.array(current_ppm, dtype=float)
+        motifs.append(
+            {
+                "id": current_name,
+                "name": current_name,
+                "ppm": ppm,
+            }
+        )
+        current_name = None
+        current_ppm = []
+        expected_rows = 0
+
+    with meme_path.open() as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.startswith("MOTIF "):
+                finalize_current()
+                current_name = line.split(maxsplit=1)[1]
+                continue
+            if line.startswith("letter-probability matrix:"):
+                width_match = re.search(r"\bw=\s*(\d+)", line)
+                if width_match:
+                    expected_rows = int(width_match.group(1))
+                continue
+            if current_name is not None and expected_rows > 0:
+                if line.startswith("URL "):
+                    finalize_current()
+                    continue
+                row = [float(x) for x in line.split()]
+                if len(row) == 4:
+                    current_ppm.append(row)
+                    if len(current_ppm) == expected_rows:
+                        finalize_current()
+
+    finalize_current()
+    return motifs
+
+
+def score_hocomoco14_matches(
+    all_patterns: dict,
+    modisco_utils_module,
+    hocomoco_patterns: list[dict],
+    min_score: float,
+    top_n: int = 5,
+) -> dict[int, dict[str, list[str]]]:
+    pattern_match_dict: dict[int, dict[str, list[str]]] = {}
+    hocomoco_ids = [motif["id"] for motif in hocomoco_patterns]
+
+    for pattern_idx, pattern_info in all_patterns.items():
+        representative = pattern_info["pattern"]
+        scores = modisco_utils_module.match_score_patterns(
+            representative,
+            hocomoco_patterns,
+            use_ppm=True,
+        ).reshape(-1)
+        ranked = sorted(
+            zip(hocomoco_ids, scores, strict=False),
+            key=lambda pair: float(pair[1]),
+            reverse=True,
+        )
+        filtered = [(motif_id, float(score)) for motif_id, score in ranked if float(score) >= min_score][:top_n]
+        if filtered:
+            pattern_match_dict[int(pattern_idx)] = {
+                "matches": [motif_id for motif_id, _ in filtered],
+                "scores": [score for _, score in filtered],
+            }
+
+    return pattern_match_dict
 
 
 def build_annotation_table(
@@ -308,74 +410,84 @@ def build_annotation_table(
     matched_modisco_h5: dict[str, str],
     modisco_api,
     annotation_pval_threshold: float,
+    annotation_min_score: float,
+    annotation_dir: Path,
 ) -> tuple[pd.DataFrame, dict]:
-    html_paths_by_class = find_report_htmls(matched_modisco_h5)
+    del matched_modisco_h5, annotation_pval_threshold
     metadata = {
         "annotation_mode": "metadata_only",
-        "n_report_htmls": len(html_paths_by_class),
         "n_patterns_with_matches": 0,
     }
 
     annotations = manifest.copy()
     annotations["motif_matches"] = pd.NA
+    annotations["motif_match_scores"] = pd.NA
     annotations["tf_candidates"] = pd.NA
     annotations["annotation_status"] = "metadata_only"
-    annotations["annotation_note"] = "No motif match HTML reports were found for this compendium input set."
+    annotations["annotation_note"] = "No HOCOMOCO v14 match exceeded the annotation score threshold."
 
-    if not html_paths_by_class:
-        return annotations, metadata
-
-    motif_to_tf_file = find_motif_to_tf_file()
-    pattern_html_paths = build_html_paths_for_patterns(all_patterns, html_paths_by_class)
-    if any(path == "" for paths in pattern_html_paths for path in paths):
-        annotations["annotation_status"] = "partial_html_coverage"
-        annotations["annotation_note"] = (
-            "Some merged pattern instances map to datasets without motifs.html, so TF annotation was skipped."
-        )
-        metadata["annotation_mode"] = "partial_html_coverage"
-        return annotations, metadata
-
-    pattern_match_dict = modisco_api.find_pattern_matches(
-        all_patterns,
-        pattern_html_paths,
-        p_val_thr=annotation_pval_threshold,
+    cache_dir = annotation_dir / "hocomoco14_cache"
+    meme_path = download_if_missing(
+        os.environ.get("HOCOMOCO14_MEME_URL", HOCOMOCO14_MEME_URL),
+        cache_dir / "H14CORE_meme_format.meme",
     )
+    annotation_jsonl = download_if_missing(
+        os.environ.get("HOCOMOCO14_ANNOTATION_URL", HOCOMOCO14_ANNOTATION_URL),
+        cache_dir / "H14CORE_annotation.jsonl",
+    )
+
+    hocomoco_meta = load_hocomoco14_annotations(annotation_jsonl)
+    hocomoco_patterns = parse_hocomoco14_meme(meme_path)
+    modisco_utils_module = sys.modules["crested.tl.modisco._modisco_utils"]
+    pattern_match_dict = score_hocomoco14_matches(
+        all_patterns=all_patterns,
+        modisco_utils_module=modisco_utils_module,
+        hocomoco_patterns=hocomoco_patterns,
+        min_score=annotation_min_score,
+    )
+
+    metadata["annotation_mode"] = "hocomoco14"
+    metadata["hocomoco14_meme_url"] = os.environ.get("HOCOMOCO14_MEME_URL", HOCOMOCO14_MEME_URL)
+    metadata["hocomoco14_annotation_url"] = os.environ.get("HOCOMOCO14_ANNOTATION_URL", HOCOMOCO14_ANNOTATION_URL)
+    metadata["annotation_min_score"] = annotation_min_score
+    metadata["hocomoco14_meme_file"] = str(meme_path)
+    metadata["hocomoco14_annotation_file"] = str(annotation_jsonl)
+    metadata["n_hocomoco14_motifs"] = len(hocomoco_patterns)
     metadata["n_patterns_with_matches"] = len(pattern_match_dict)
 
-    pattern_tf_dict = {}
-    if motif_to_tf_file is not None:
-        motif_to_tf_df = modisco_api.read_motif_to_tf_file(str(motif_to_tf_file))
-        cols = choose_annotation_columns(motif_to_tf_df)
-        if cols:
-            pattern_tf_dict, _ = modisco_api.create_pattern_tf_dict(
-                pattern_match_dict,
-                motif_to_tf_df,
-                all_patterns,
-                cols,
-            )
-            metadata["annotation_mode"] = "motif_and_tf"
-            metadata["motif_to_tf_file"] = str(motif_to_tf_file)
-        else:
-            metadata["annotation_mode"] = "motif_only"
-            metadata["motif_to_tf_file"] = str(motif_to_tf_file)
-    else:
-        metadata["annotation_mode"] = "motif_only"
-
     annotations["annotation_status"] = "no_match"
-    annotations["annotation_note"] = "No motif database match passed the p-value threshold."
+    annotations["annotation_note"] = "No HOCOMOCO v14 match exceeded the annotation score threshold."
 
     for pattern_idx, match_info in pattern_match_dict.items():
         mask = annotations["pattern_idx"] == int(pattern_idx)
         matches = sorted(set(match_info.get("matches", [])))
+        scores = match_info.get("scores", [])
         annotations.loc[mask, "motif_matches"] = ";".join(matches) if matches else pd.NA
-        annotations.loc[mask, "annotation_status"] = "motif_match"
-        annotations.loc[mask, "annotation_note"] = "Matched motif database entries from modisco report HTML."
+        annotations.loc[mask, "motif_match_scores"] = (
+            ";".join(f"{score:.3f}" for score in scores) if scores else pd.NA
+        )
 
-        if pattern_idx in pattern_tf_dict:
-            tfs = sorted(set(pattern_tf_dict[pattern_idx].get("tfs", [])))
-            annotations.loc[mask, "tf_candidates"] = ";".join(tfs) if tfs else pd.NA
-            annotations.loc[mask, "annotation_status"] = "motif_and_tf_match"
-            annotations.loc[mask, "annotation_note"] = "Matched motif database entries and mapped them to TF candidates."
+        tf_candidates: list[str] = []
+        for motif_name in matches:
+            motif_meta = hocomoco_meta.get(motif_name, {})
+            for candidate in [
+                motif_meta.get("gene_symbol"),
+                motif_meta.get("tf"),
+                *motif_meta.get("gene_synonyms", []),
+            ]:
+                if candidate:
+                    tf_candidates.append(candidate)
+
+        tf_candidates = sorted(dict.fromkeys(tf_candidates))
+        annotations.loc[mask, "tf_candidates"] = (
+            ";".join(tf_candidates) if tf_candidates else pd.NA
+        )
+        annotations.loc[mask, "annotation_status"] = (
+            "hocomoco14_tf_match" if tf_candidates else "hocomoco14_motif_match"
+        )
+        annotations.loc[mask, "annotation_note"] = (
+            "Matched representative motif directly against HOCOMOCO v14 H14CORE and expanded TF names from the official annotation JSONL."
+        )
 
     return annotations, metadata
 
@@ -437,6 +549,8 @@ def main(args: argparse.Namespace) -> None:
         matched_modisco_h5=matched_modisco_h5,
         modisco_api=modisco_api,
         annotation_pval_threshold=args.annotation_pval_threshold,
+        annotation_min_score=args.annotation_min_score,
+        annotation_dir=args.annotation_dir,
     )
     annotation_metadata["compendium_dir"] = str(args.compendium_dir)
     annotation_metadata["plots_dir"] = str(args.plots_dir)

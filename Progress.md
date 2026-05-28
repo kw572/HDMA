@@ -196,3 +196,102 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
 - Symptom: `ValueError: The number of observations cannot be determined on an empty distance matrix.`
 - Cause: the one-dataset validation matrix has only one row, so row clustering is undefined.
 - Resolution: updated the clustermap renderer to automatically disable row or column clustering whenever the filtered matrix dimension is `< 2`.
+
+## Full Atlas Run
+
+### 2026-05-28 14:28 PT
+
+- Confirmed that local QC keep files are empty or absent for this workspace, so `02b-compendium` will use its fallback dataset discovery from the modisco directory.
+- Confirmed the current full discovered dataset set under `bias_1_Jaw_Hyoid_thresh0.4`:
+  - `1_Jaw_Hyoid`
+  - `3_Ventral_oral_Joint_mandible`
+  - `4_Frontonasal`
+  - `6_Maxilla_I`
+  - `7_Teeth`
+  - `8_Maxilla_II`
+  - `9_Intermediate_Jaw`
+  - `Gills_Ventral_3-6Arch`
+  - `Opercle`
+  - `Ventral_2nd_Arch`
+  - `Ventral_Intermediate`
+- Submitted the full all-cluster `02b-compendium` run with no dataset filter:
+  - `sbatch --export=ALL,CRESTED_ENV_NAME=modiscolite 00-run_all_compendium.sbatch`
+  - Job id: `9002341`
+- Early log check confirms the intended scope:
+  - `dataset_filter=<all datasets>`
+  - job state entered `RUNNING` on node `d05-37`
+
+### 2026-05-28 14:40 PT
+
+- Follow-up monitoring from the local workstation was blocked by a transient SSH connectivity failure to USC HPC.
+- Exact symptom from a minimal probe:
+  - `ssh: connect to host discovery.usc.edu port 22: Operation timed out`
+  - verbose SSH showed consecutive timeouts to `10.72.0.13` and `10.72.0.14`
+- Impact:
+  - could not fetch the latest `sacct` status for job `9002341`
+  - could not inspect the current `.out`/`.err` logs or output files during this monitor cycle
+- Resolution:
+  - no pipeline code change was indicated
+  - leave the full-run monitor active and retry on the next heartbeat once cluster connectivity recovers
+
+### 2026-05-28 14:45 PT
+
+- SSH connectivity to USC HPC recovered on the next monitor cycle.
+- Final status for the full all-cluster job `9002341`:
+  - `sacct` reports `COMPLETED` with exit code `0:0`
+  - elapsed time: `00:05:38`
+- The full compendium run completed cleanly across all discovered datasets.
+- `run_summary.json` confirms:
+  - `n_requested_datasets = 11`
+  - `n_matched_datasets = 11`
+  - `n_missing_datasets = 0`
+  - `n_patterns = 45`
+  - `pattern_matrix_shape = [11, 45]`
+- `annotation/annotation_summary.json` confirms:
+  - `annotation_mode = motif_only`
+  - `n_report_htmls = 11`
+  - `n_patterns_with_matches = 39`
+- The resulting `pattern_matrix.tsv` now contains 11 cluster rows:
+  - `1_Jaw_Hyoid`
+  - `3_Ventral_oral_Joint_mandible`
+  - `4_Frontonasal`
+  - `6_Maxilla_I`
+  - `7_Teeth`
+  - `8_Maxilla_II`
+  - `9_Intermediate_Jaw`
+  - `Gills_Ventral_3-6Arch`
+  - `Opercle`
+  - `Ventral_2nd_Arch`
+  - `Ventral_Intermediate`
+- Conclusion: `02b-compendium` now consolidates the full atlas ChromBPNet motif set in CREsted style and produces the expected multi-cluster heatmap input and motif-annotation outputs on HPC.
+
+## HOCOMOCO14 Re-annotation
+
+### 2026-05-28 14:54 PT
+
+- Updated `02-annotate_and_heatmap.py` so annotation no longer depends on the older pre-rendered modisco report labels for TF naming.
+- The annotation step now:
+  - downloads the official HOCOMOCO v14 H14CORE MEME database from `https://hocomoco14.autosome.org/final_bundle/hocomoco14/H14CORE/formatted_motifs/H14CORE_meme_format.meme`
+  - downloads the official HOCOMOCO v14 H14CORE metadata from `https://hocomoco14.autosome.org/final_bundle/hocomoco14/H14CORE/H14CORE_annotation.jsonl`
+  - matches each merged CREsted representative motif directly against the HOCOMOCO14 motif database using CREsted's TOMTOM-style scoring
+  - expands TF names and synonyms from the official HOCOMOCO14 JSONL
+- Re-ran `02-annotate_and_heatmap.sh` on the completed 11-cluster compendium output.
+- New annotation summary:
+  - `annotation_mode = hocomoco14`
+  - `n_hocomoco14_motifs = 1595`
+  - `n_patterns_with_matches = 32`
+  - `annotation_min_score = 6.0`
+- Example successful HOCOMOCO14 TF annotations now present in `pattern_annotations.tsv`:
+  - `CTCF/CTCFL`
+  - `DLX1/DLX2/DLX4/DLX5/DLX6`
+  - `ATF3/ATF6A/BATF2/BATF3/JUNB`
+  - `RXRA/RXRB/RXRG/COT1`
+- Updated outputs remain under:
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/annotation/`
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/`
+
+### Error 12: HOCOMOCO14 MEME parser initially failed on the `w=` header format
+
+- Symptom: `ValueError: invalid literal for int() with base 10: ''`
+- Cause: the HOCOMOCO14 MEME header uses `w= 10` formatting, while the first parser version assumed `w=10` without whitespace.
+- Resolution: updated the parser to extract motif width with a regex that tolerates optional spaces after `w=`.
