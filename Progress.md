@@ -85,3 +85,10 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
 - Symptom: job log showed `crested_repo=/scratch1/kuangtse/code/CREsted`, followed by the same `Unable to import crested` failure.
 - Cause: the Python bootstrap still tried `import crested` after adding the checkout `src` path, and the `modiscolite` environment is lighter than a full CREsted install.
 - Resolution: changed `01-build_crested_compendium.py` so checkout discovery only requires `src/crested` to exist. If the top-level import still fails, the script now creates a minimal `crested` package namespace pointing at the checkout and lets the motif module load directly from source.
+
+### Error 6: `modiscolite` HPC env is missing `loguru`
+
+- Job: `8997745`
+- Symptom: `ModuleNotFoundError: No module named 'loguru'`
+- Cause: CREsted's motif helpers import `loguru` for logging, but the available HPC `modiscolite` env does not include it.
+- Resolution: added a small fallback shim in `01-build_crested_compendium.py` that injects a minimal `loguru.logger` backed by Python's standard `logging` module before loading CREsted's motif source files.

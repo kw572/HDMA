@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import logging
 import os
 import pickle
 import re
@@ -94,6 +95,17 @@ def load_crested_modisco_api():
             modisco_pkg = types.ModuleType("crested.tl.modisco")
             modisco_pkg.__path__ = [str(modisco_root)]
             sys.modules["crested.tl.modisco"] = modisco_pkg
+
+        if "loguru" not in sys.modules:
+            loguru_module = types.ModuleType("loguru")
+            logger = logging.getLogger("crested_modisco_fallback")
+            if not logger.handlers:
+                handler = logging.StreamHandler()
+                handler.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
+                logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+            loguru_module.logger = logger
+            sys.modules["loguru"] = loguru_module
 
         load_module_from_path(
             "crested.tl.modisco._modisco_utils",
