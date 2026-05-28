@@ -617,12 +617,34 @@ def build_pattern_label(row: pd.Series) -> str:
     return f"{representative_id} [p{pattern_idx}]"
 
 
+def build_pattern_name(row: pd.Series) -> str:
+    tf_candidates = row.get("tf_candidates")
+    motif_matches = row.get("motif_matches")
+
+    if pd.notna(tf_candidates) and str(tf_candidates).strip():
+        return str(tf_candidates).split(";")[0]
+
+    if pd.notna(motif_matches) and str(motif_matches).strip():
+        return str(motif_matches).split(";")[0]
+
+    return str(row.get("representative_id", f"pattern_{int(row['pattern_idx'])}"))
+
+
+def build_pattern_family(row: pd.Series) -> str:
+    tf_family_candidates = row.get("tf_family_candidates")
+
+    if pd.notna(tf_family_candidates) and str(tf_family_candidates).strip():
+        return str(tf_family_candidates).split(";")[0]
+
+    return build_pattern_name(row)
+
+
 def build_labeled_matrix(
     pattern_matrix: np.ndarray,
     classes: list[str],
     annotations: pd.DataFrame,
     importance_threshold: float,
-) -> tuple[pd.DataFrame, list[int]]:
+) -> tuple[pd.DataFrame, list[int], pd.DataFrame]:
     max_importance = np.max(np.abs(pattern_matrix), axis=0)
     keep = max_importance > importance_threshold
     filtered = pattern_matrix[:, keep]
@@ -639,7 +661,18 @@ def build_labeled_matrix(
         .reset_index(drop=True)
     )
     columns = [build_pattern_label(row) for _, row in annotation_lookup.iterrows()]
-    return pd.DataFrame(filtered, index=classes, columns=columns), kept_pattern_indices.tolist()
+    annotation_lookup = annotation_lookup.copy()
+    annotation_lookup["plot_name"] = [
+        build_pattern_name(row) for _, row in annotation_lookup.iterrows()
+    ]
+    annotation_lookup["plot_family"] = [
+        build_pattern_family(row) for _, row in annotation_lookup.iterrows()
+    ]
+    return (
+        pd.DataFrame(filtered, index=classes, columns=columns),
+        kept_pattern_indices.tolist(),
+        annotation_lookup,
+    )
 
 
 def zscore_rows(data: pd.DataFrame) -> pd.DataFrame:
@@ -737,6 +770,52 @@ def add_pwm_logos_to_clustermap_rows(
             spine.set_visible(False)
 
 
+def add_row_labels_to_clustermap(
+    grid,
+    row_names: list[str],
+    row_families: list[str],
+    name_width_fraction: float = 0.16,
+    family_width_fraction: float = 0.24,
+    gap_fraction: float = 0.015,
+) -> None:
+    row_order = (
+        grid.dendrogram_row.reordered_ind
+        if getattr(grid, "dendrogram_row", None) is not None and grid.dendrogram_row is not None
+        else list(range(len(row_names)))
+    )
+    ordered_names = [row_names[idx] for idx in row_order]
+    ordered_families = [row_families[idx] for idx in row_order]
+
+    fig = grid.fig
+    heatmap_pos = grid.ax_heatmap.get_position()
+    n = len(ordered_names)
+    if n == 0:
+        return
+
+    gap = heatmap_pos.width * gap_fraction
+    name_width = heatmap_pos.width * name_width_fraction
+    family_width = heatmap_pos.width * family_width_fraction
+    family_x = heatmap_pos.x0 - family_width - gap
+    name_x = family_x - name_width - gap
+
+    extra_fraction = name_width_fraction + family_width_fraction + (2 * gap_fraction)
+    fig.set_size_inches(fig.get_size_inches()[0] * (1 + extra_fraction), fig.get_size_inches()[1])
+
+    name_ax = fig.add_axes([name_x, heatmap_pos.y0, name_width, heatmap_pos.height])
+    family_ax = fig.add_axes([family_x, heatmap_pos.y0, family_width, heatmap_pos.height])
+
+    for ax, title in [(name_ax, "Name"), (family_ax, "Family")]:
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, n)
+        ax.axis("off")
+        ax.set_title(title, fontsize=10, pad=8, loc="left")
+
+    for i, (name, family) in enumerate(zip(ordered_names, ordered_families, strict=False)):
+        y = n - i - 0.5
+        name_ax.text(0.0, y, name, va="center", ha="left", fontsize=9)
+        family_ax.text(0.0, y, family, va="center", ha="left", fontsize=9)
+
+
 def save_clustermap(
     data: pd.DataFrame,
     output_path: Path,
@@ -747,6 +826,8 @@ def save_clustermap(
     center: float = 0,
     pattern_ppms: list[np.ndarray] | None = None,
     logo_axis: str = "column",
+    row_names: list[str] | None = None,
+    row_families: list[str] | None = None,
 ) -> None:
     sns.set_theme(style="white")
     row_cluster = data.shape[0] > 1
@@ -769,7 +850,11 @@ def save_clustermap(
     colorbar.set_label(colorbar_label, rotation=270, labelpad=20)
     grid.ax_heatmap.set_xlabel("Class")
     grid.ax_heatmap.set_ylabel("Annotated motif")
-    grid.ax_heatmap.set_yticklabels(grid.ax_heatmap.get_yticklabels(), rotation=0)
+    if row_names is not None and row_families is not None:
+        grid.ax_heatmap.set_yticklabels([])
+        grid.ax_heatmap.tick_params(axis="y", length=0)
+    else:
+        grid.ax_heatmap.set_yticklabels(grid.ax_heatmap.get_yticklabels(), rotation=0)
     grid.ax_heatmap.set_xticklabels(
         grid.ax_heatmap.get_xticklabels(),
         rotation=90,
@@ -781,6 +866,8 @@ def save_clustermap(
             add_pwm_logos_to_clustermap_rows(grid, pattern_ppms)
         else:
             add_pwm_logos_to_clustermap(grid, pattern_ppms)
+    if row_names is not None and row_families is not None:
+        add_row_labels_to_clustermap(grid, row_names=row_names, row_families=row_families)
     grid.fig.suptitle(title, y=1.02)
     grid.savefig(output_path, bbox_inches="tight")
     plt.close(grid.fig)
@@ -810,7 +897,7 @@ def main(args: argparse.Namespace) -> None:
     with (args.annotation_dir / "annotation_summary.json").open("w") as handle:
         json.dump(annotation_metadata, handle, indent=2)
 
-    counts_df, kept_pattern_indices = build_labeled_matrix(
+    counts_df, kept_pattern_indices, annotation_lookup = build_labeled_matrix(
         pattern_matrix=pattern_matrix,
         classes=classes,
         annotations=annotations,
@@ -825,6 +912,8 @@ def main(args: argparse.Namespace) -> None:
 
     zscore_df_t = zscore_rows(counts_df_t)
     zscore_df_t.to_csv(args.plots_dir / "pattern_matrix_annotated_znorm.tsv", sep="\t")
+    row_names = annotation_lookup["plot_name"].tolist()
+    row_families = annotation_lookup["plot_family"].tolist()
 
     save_clustermap(
         data=counts_df_t,
@@ -836,6 +925,8 @@ def main(args: argparse.Namespace) -> None:
         center=0,
         pattern_ppms=pattern_ppms,
         logo_axis="row",
+        row_names=row_names,
+        row_families=row_families,
     )
     save_clustermap(
         data=zscore_df_t,
@@ -847,6 +938,8 @@ def main(args: argparse.Namespace) -> None:
         center=0,
         pattern_ppms=pattern_ppms,
         logo_axis="row",
+        row_names=row_names,
+        row_families=row_families,
     )
 
     print(json.dumps(

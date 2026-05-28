@@ -431,3 +431,20 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
   - `HOX [p3]`
   - `C2H2 zinc finger factors [p4]`
   - `Basic leucine zipper factors (bZIP) [p5]`
+
+### 2026-05-28 15:51 PT
+
+- Updated the annotated JASPAR 2026 heatmap layout so the left side now reads:
+  - TF-MoDISco logo
+  - motif name
+  - motif family
+  - heatmap
+- Kept the transposed motif-row layout and hid the previous in-heatmap y tick labels in favor of explicit text columns.
+- Re-ran the HPC annotation and heatmap step successfully with:
+  - `CRESTED_ANNOTATION_DB=jaspar2026`
+- Verified fresh output timestamps:
+  - counts heatmap: `2026-05-28 15:50:31 PT`
+  - z-score heatmap: `2026-05-28 15:50:49 PT`
+- Refreshed PNG sizes increased as expected with the added left-side annotation columns:
+  - `pattern_clustermap_counts_annotated.png`: `568K`
+  - `pattern_clustermap_znorm_annotated.png`: `564K`
