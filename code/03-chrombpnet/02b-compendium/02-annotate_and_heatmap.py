@@ -514,7 +514,7 @@ def build_labeled_matrix(
     classes: list[str],
     annotations: pd.DataFrame,
     importance_threshold: float,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list[int]]:
     max_importance = np.max(np.abs(pattern_matrix), axis=0)
     keep = max_importance > importance_threshold
     filtered = pattern_matrix[:, keep]
@@ -531,7 +531,7 @@ def build_labeled_matrix(
         .reset_index(drop=True)
     )
     columns = [build_pattern_label(row) for _, row in annotation_lookup.iterrows()]
-    return pd.DataFrame(filtered, index=classes, columns=columns)
+    return pd.DataFrame(filtered, index=classes, columns=columns), kept_pattern_indices.tolist()
 
 
 def zscore_rows(data: pd.DataFrame) -> pd.DataFrame:
@@ -543,6 +543,53 @@ def zscore_rows(data: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(zvalues, index=data.index, columns=data.columns)
 
 
+def ppm_to_ic_matrix(ppm: np.ndarray) -> np.ndarray:
+    ppm = np.asarray(ppm, dtype=float)
+    ppm = np.clip(ppm, 1e-9, 1.0)
+    entropy = -(ppm * np.log2(ppm)).sum(axis=1, keepdims=True)
+    info = 2.0 - entropy
+    return ppm * info
+
+
+def add_pwm_logos_to_clustermap(
+    grid,
+    ppms: list[np.ndarray],
+    logo_height_fraction: float = 0.28,
+    logo_y_padding: float = 0.18,
+) -> None:
+    import logomaker
+
+    col_order = (
+        grid.dendrogram_col.reordered_ind
+        if getattr(grid, "dendrogram_col", None) is not None and grid.dendrogram_col is not None
+        else list(range(len(ppms)))
+    )
+    ordered_ppms = [ppms[idx] for idx in col_order]
+
+    fig = grid.fig
+    heatmap_pos = grid.ax_heatmap.get_position()
+    n = len(ordered_ppms)
+    if n == 0:
+        return
+
+    logo_width = heatmap_pos.width / n
+    logo_height = heatmap_pos.height * logo_height_fraction
+    logo_y = heatmap_pos.y0 - logo_height * (1.0 + logo_y_padding)
+
+    fig.set_size_inches(fig.get_size_inches()[0], fig.get_size_inches()[1] * (1 + logo_height_fraction))
+
+    for i, ppm in enumerate(ordered_ppms):
+        x0 = heatmap_pos.x0 + logo_width * i
+        ax = fig.add_axes([x0, logo_y, logo_width, logo_height])
+        ic_matrix = ppm_to_ic_matrix(ppm)
+        logo_df = pd.DataFrame(ic_matrix, columns=["A", "C", "G", "T"])
+        logomaker.Logo(logo_df, ax=ax)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+
 def save_clustermap(
     data: pd.DataFrame,
     output_path: Path,
@@ -551,6 +598,7 @@ def save_clustermap(
     title: str,
     colorbar_label: str,
     center: float = 0,
+    pattern_ppms: list[np.ndarray] | None = None,
 ) -> None:
     sns.set_theme(style="white")
     row_cluster = data.shape[0] > 1
@@ -579,6 +627,8 @@ def save_clustermap(
         ha="center",
         fontsize=8,
     )
+    if pattern_ppms is not None:
+        add_pwm_logos_to_clustermap(grid, pattern_ppms)
     grid.fig.suptitle(title, y=1.02)
     grid.savefig(output_path, bbox_inches="tight")
     plt.close(grid.fig)
@@ -608,12 +658,16 @@ def main(args: argparse.Namespace) -> None:
     with (args.annotation_dir / "annotation_summary.json").open("w") as handle:
         json.dump(annotation_metadata, handle, indent=2)
 
-    counts_df = build_labeled_matrix(
+    counts_df, kept_pattern_indices = build_labeled_matrix(
         pattern_matrix=pattern_matrix,
         classes=classes,
         annotations=annotations,
         importance_threshold=args.importance_threshold,
     )
+    pattern_ppms = [
+        np.asarray(all_patterns[str(pattern_idx)]["pattern"]["ppm"], dtype=float)
+        for pattern_idx in kept_pattern_indices
+    ]
     counts_df.to_csv(args.plots_dir / "pattern_matrix_annotated_counts.tsv", sep="\t")
 
     zscore_df = zscore_rows(counts_df)
@@ -627,6 +681,7 @@ def main(args: argparse.Namespace) -> None:
         title="CREsted-style motif compendium clustermap (counts, annotated)",
         colorbar_label="Motif count / importance",
         center=0,
+        pattern_ppms=pattern_ppms,
     )
     save_clustermap(
         data=zscore_df,
@@ -636,6 +691,7 @@ def main(args: argparse.Namespace) -> None:
         title="CREsted-style motif compendium clustermap (row z-score, annotated)",
         colorbar_label="Row z-score",
         center=0,
+        pattern_ppms=pattern_ppms,
     )
 
     print(json.dumps(

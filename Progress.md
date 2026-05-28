@@ -327,3 +327,25 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
 - Symptom: `NameError: name 'classes' is not defined`
 - Cause: `save_clustermap()` was refactored to accept a labeled DataFrame, but one `seaborn.clustermap()` argument still referenced the old outer-scope `classes` variable.
 - Resolution: changed the plotter to use `data.index.tolist()` and the requested `center` argument directly.
+
+## Logo Heatmaps
+
+### 2026-05-28 15:23 PT
+
+- Clarified the z-score behavior:
+  - the `pattern_matrix_annotated_znorm.tsv` view is row-wise z-normalized
+  - each class row is centered to mean `0` by definition
+  - positive values mean "above that class's average motif usage" and negative values mean "below that class's average motif usage"
+- Updated the annotated heatmap renderer to draw the merged TF-MoDISco representative motif logos underneath the clustered columns using each pattern's stored representative `ppm`.
+- Re-ran the HPC post-process successfully.
+- Refreshed outputs:
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/pattern_clustermap_counts_annotated.png`
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/pattern_clustermap_znorm_annotated.png`
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/pattern_matrix_annotated_counts.tsv`
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/pattern_matrix_annotated_znorm.tsv`
+
+### Error 14: logo-enabled clustermap refactor initially kept one stale y-label reference
+
+- Symptom: `NameError: name 'classes' is not defined`
+- Cause: after switching the plotter to operate on labeled DataFrames, the seaborn call still referenced the old `classes` variable instead of the DataFrame index.
+- Resolution: updated the plotter to use `data.index.tolist()` for y tick labels.
