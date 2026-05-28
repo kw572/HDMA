@@ -590,6 +590,45 @@ def add_pwm_logos_to_clustermap(
             spine.set_visible(False)
 
 
+def add_pwm_logos_to_clustermap_rows(
+    grid,
+    ppms: list[np.ndarray],
+    logo_width_fraction: float = 0.22,
+    logo_x_padding: float = 0.04,
+) -> None:
+    import logomaker
+
+    row_order = (
+        grid.dendrogram_row.reordered_ind
+        if getattr(grid, "dendrogram_row", None) is not None and grid.dendrogram_row is not None
+        else list(range(len(ppms)))
+    )
+    ordered_ppms = [ppms[idx] for idx in row_order]
+
+    fig = grid.fig
+    heatmap_pos = grid.ax_heatmap.get_position()
+    n = len(ordered_ppms)
+    if n == 0:
+        return
+
+    logo_height = heatmap_pos.height / n
+    logo_width = heatmap_pos.width * logo_width_fraction
+    logo_x = heatmap_pos.x0 - logo_width * (1.0 + logo_x_padding)
+
+    fig.set_size_inches(fig.get_size_inches()[0] * (1 + logo_width_fraction), fig.get_size_inches()[1])
+
+    for i, ppm in enumerate(ordered_ppms):
+        y0 = heatmap_pos.y0 + heatmap_pos.height - logo_height * (i + 1)
+        ax = fig.add_axes([logo_x, y0, logo_width, logo_height])
+        ic_matrix = ppm_to_ic_matrix(ppm)
+        logo_df = pd.DataFrame(ic_matrix, columns=["A", "C", "G", "T"])
+        logomaker.Logo(logo_df, ax=ax)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+
 def save_clustermap(
     data: pd.DataFrame,
     output_path: Path,
@@ -599,6 +638,7 @@ def save_clustermap(
     colorbar_label: str,
     center: float = 0,
     pattern_ppms: list[np.ndarray] | None = None,
+    logo_axis: str = "column",
 ) -> None:
     sns.set_theme(style="white")
     row_cluster = data.shape[0] > 1
@@ -610,7 +650,7 @@ def save_clustermap(
         method="average",
         figsize=(width, height),
         yticklabels=data.index.tolist(),
-        xticklabels=True,
+        xticklabels=data.columns.tolist(),
         dendrogram_ratio=(0.05, 0.2),
         cbar_pos=(1.05, 0.4, 0.01, 0.3),
         row_cluster=row_cluster,
@@ -618,8 +658,8 @@ def save_clustermap(
     )
     colorbar = grid.ax_heatmap.collections[0].colorbar
     colorbar.set_label(colorbar_label, rotation=270, labelpad=20)
-    grid.ax_heatmap.set_xlabel("Annotated motif")
-    grid.ax_heatmap.set_ylabel("Class")
+    grid.ax_heatmap.set_xlabel("Class")
+    grid.ax_heatmap.set_ylabel("Annotated motif")
     grid.ax_heatmap.set_yticklabels(grid.ax_heatmap.get_yticklabels(), rotation=0)
     grid.ax_heatmap.set_xticklabels(
         grid.ax_heatmap.get_xticklabels(),
@@ -628,7 +668,10 @@ def save_clustermap(
         fontsize=8,
     )
     if pattern_ppms is not None:
-        add_pwm_logos_to_clustermap(grid, pattern_ppms)
+        if logo_axis == "row":
+            add_pwm_logos_to_clustermap_rows(grid, pattern_ppms)
+        else:
+            add_pwm_logos_to_clustermap(grid, pattern_ppms)
     grid.fig.suptitle(title, y=1.02)
     grid.savefig(output_path, bbox_inches="tight")
     plt.close(grid.fig)
@@ -668,30 +711,34 @@ def main(args: argparse.Namespace) -> None:
         np.asarray(all_patterns[str(pattern_idx)]["pattern"]["ppm"], dtype=float)
         for pattern_idx in kept_pattern_indices
     ]
-    counts_df.to_csv(args.plots_dir / "pattern_matrix_annotated_counts.tsv", sep="\t")
+    counts_df_t = counts_df.T
+    counts_df_t.to_csv(args.plots_dir / "pattern_matrix_annotated_counts.tsv", sep="\t")
 
     zscore_df = zscore_rows(counts_df)
-    zscore_df.to_csv(args.plots_dir / "pattern_matrix_annotated_znorm.tsv", sep="\t")
+    zscore_df_t = zscore_df.T
+    zscore_df_t.to_csv(args.plots_dir / "pattern_matrix_annotated_znorm.tsv", sep="\t")
 
     save_clustermap(
-        data=counts_df,
+        data=counts_df_t,
         output_path=args.plots_dir / "pattern_clustermap_counts_annotated.png",
         width=args.heatmap_width,
-        height=args.heatmap_height,
-        title="CREsted-style motif compendium clustermap (counts, annotated)",
+        height=max(args.heatmap_height, len(counts_df_t.index) * 0.22),
+        title="CREsted-style motif compendium clustermap (counts, annotated, transposed)",
         colorbar_label="Motif count / importance",
         center=0,
         pattern_ppms=pattern_ppms,
+        logo_axis="row",
     )
     save_clustermap(
-        data=zscore_df,
+        data=zscore_df_t,
         output_path=args.plots_dir / "pattern_clustermap_znorm_annotated.png",
         width=args.heatmap_width,
-        height=args.heatmap_height,
-        title="CREsted-style motif compendium clustermap (row z-score, annotated)",
+        height=max(args.heatmap_height, len(zscore_df_t.index) * 0.22),
+        title="CREsted-style motif compendium clustermap (row z-score, annotated, transposed)",
         colorbar_label="Row z-score",
         center=0,
         pattern_ppms=pattern_ppms,
+        logo_axis="row",
     )
 
     print(json.dumps(

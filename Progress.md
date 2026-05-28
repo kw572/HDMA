@@ -349,3 +349,25 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
 - Symptom: `NameError: name 'classes' is not defined`
 - Cause: after switching the plotter to operate on labeled DataFrames, the seaborn call still referenced the old `classes` variable instead of the DataFrame index.
 - Resolution: updated the plotter to use `data.index.tolist()` for y tick labels.
+
+## Transposed Logo Heatmaps
+
+### 2026-05-28 15:26 PT
+
+- Flipped the annotated heatmap outputs so motifs are rows and clusters are columns.
+- This makes the motif labels and TF-MoDISco logos more readable for the dense 45-pattern compendium.
+- The TF-MoDISco representative logos are now drawn on the motif-row side rather than along the bottom columns.
+- Re-ran the HPC post-process successfully.
+- Verified the flipped matrix headers now start with cluster columns:
+  - `1_Jaw_Hyoid`
+  - `3_Ventral_oral_Joint_mandible`
+  - `4_Frontonasal`
+  - `6_Maxilla_I`
+  - `7_Teeth`
+  - `8_Maxilla_II`
+  - `9_Intermediate_Jaw`
+- Updated outputs:
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/pattern_matrix_annotated_counts.tsv`
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/pattern_matrix_annotated_znorm.tsv`
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/pattern_clustermap_counts_annotated.png`
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/pattern_clustermap_znorm_annotated.png`
