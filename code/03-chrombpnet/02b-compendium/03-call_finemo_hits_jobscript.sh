@@ -17,8 +17,9 @@ out_dir="${5}"
 compendium_dir="${6}"
 alpha="${7}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-mkdir -p "${SCRIPT_DIR}/Log" "${out_dir}"
+RUN_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
+SCRIPT_DIR="${RUN_DIR}"
+mkdir -p "${RUN_DIR}/Log" "${out_dir}"
 
 FINEMO_VENV="${FINEMO_VENV:-/scratch1/${USER}/venvs/finemo310}"
 if [[ ! -x "${FINEMO_VENV}/bin/activate" && -x "/scratch1/${USER}/venvs/finemo/bin/activate" ]]; then

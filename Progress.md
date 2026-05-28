@@ -479,3 +479,10 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
   - state at submission check: `PENDING (Priority)`
 - Current expected pilot output root:
   - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/finemo_hits/1_Jaw_Hyoid`
+
+### Error 15: first `02b` Fi-NeMo pilot used Slurm spool path as script dir
+
+- Symptom: pilot job `9016420` failed immediately with:
+  - `mkdir: cannot create directory '/var/spool/slurm/d/job9016420/Log': Permission denied`
+- Cause: the Fi-NeMo batch script used `BASH_SOURCE[0]` to derive `SCRIPT_DIR`, but under `sbatch` that resolved to Slurm’s spool copy of the script instead of the real `02b-compendium` directory.
+- Resolution: changed `03-call_finemo_hits_jobscript.sh` to anchor `SCRIPT_DIR` and `Log/` on `SLURM_SUBMIT_DIR` instead, which points back to the real project checkout submitted by the wrapper.
