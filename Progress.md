@@ -458,3 +458,24 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
 - Verified fresh output timestamps for the spacing-fix rerender:
   - counts heatmap: `2026-05-28 16:01:47 PT`
   - z-score heatmap: `2026-05-28 16:02:02 PT`
+
+### 2026-05-28 16:19 PT
+
+- Added an initial `02b` Fi-NeMo stage that uses the original per-dataset TF-MoDISco H5 files for hit calling and then reconciles the resulting motif hits back to the merged `02b` compendium groups.
+- New `02b` Fi-NeMo files:
+  - `03-call_finemo_hits.sh`
+  - `03-call_finemo_hits_jobscript.sh`
+  - `03-map_finemo_to_compendium.py`
+- Design choice:
+  - keep Fi-NeMo motif calling on the original per-dataset motif sets
+  - avoid inventing a synthetic merged TF-MoDISco H5 for Fi-NeMo
+  - attach `compendium_pattern_idx`, compendium name, and family onto the called hits after the fact using `all_patterns.pkl`
+- Verified locally:
+  - `bash -n` passed for both new shell scripts
+  - `py_compile` passed for the reconciliation script
+- Synced the new `02b-compendium` scripts to HPC.
+- Submitted a one-dataset pilot for `1_Jaw_Hyoid`:
+  - job id: `9016420`
+  - state at submission check: `PENDING (Priority)`
+- Current expected pilot output root:
+  - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/finemo_hits/1_Jaw_Hyoid`
