@@ -448,3 +448,13 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
 - Refreshed PNG sizes increased as expected with the added left-side annotation columns:
   - `pattern_clustermap_counts_annotated.png`: `568K`
   - `pattern_clustermap_znorm_annotated.png`: `564K`
+
+### 2026-05-28 16:02 PT
+
+- Adjusted the left-margin spacing again so the motif family text sits farther to the right and no longer collides with the TF-MoDISco logos.
+- Increased the gap between the logo lane and the text columns, and shifted the entire heatmap/dendrogram/colorbar block rightward when left-side annotation columns are present.
+- Re-ran the HPC annotation and heatmap step successfully with:
+  - `CRESTED_ANNOTATION_DB=jaspar2026`
+- Verified fresh output timestamps for the spacing-fix rerender:
+  - counts heatmap: `2026-05-28 16:01:47 PT`
+  - z-score heatmap: `2026-05-28 16:02:02 PT`

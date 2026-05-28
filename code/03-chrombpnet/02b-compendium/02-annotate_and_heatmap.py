@@ -776,7 +776,7 @@ def add_row_labels_to_clustermap(
     row_families: list[str],
     name_width_fraction: float = 0.16,
     family_width_fraction: float = 0.24,
-    gap_fraction: float = 0.015,
+    gap_fraction: float = 0.03,
 ) -> None:
     row_order = (
         grid.dendrogram_row.reordered_ind
@@ -846,6 +846,31 @@ def save_clustermap(
         row_cluster=row_cluster,
         col_cluster=col_cluster,
     )
+    if row_names is not None and row_families is not None:
+        current_heatmap_pos = grid.ax_heatmap.get_position()
+        shift = current_heatmap_pos.width * 0.18
+        grid.ax_heatmap.set_position([
+            current_heatmap_pos.x0 + shift,
+            current_heatmap_pos.y0,
+            current_heatmap_pos.width,
+            current_heatmap_pos.height,
+        ])
+        if getattr(grid, "ax_row_dendrogram", None) is not None:
+            row_d_pos = grid.ax_row_dendrogram.get_position()
+            grid.ax_row_dendrogram.set_position([
+                row_d_pos.x0 + shift,
+                row_d_pos.y0,
+                row_d_pos.width,
+                row_d_pos.height,
+            ])
+        if getattr(grid, "cax", None) is not None:
+            cax_pos = grid.cax.get_position()
+            grid.cax.set_position([
+                cax_pos.x0 + shift,
+                cax_pos.y0,
+                cax_pos.width,
+                cax_pos.height,
+            ])
     colorbar = grid.ax_heatmap.collections[0].colorbar
     colorbar.set_label(colorbar_label, rotation=270, labelpad=20)
     grid.ax_heatmap.set_xlabel("Class")
