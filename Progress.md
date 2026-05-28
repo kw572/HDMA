@@ -400,3 +400,14 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
   - global max: `3.16227766016838`
   - per-row means are approximately `0`
   - per-row standard deviations are `1`
+
+### 2026-05-28 15:37 PT
+
+- Tightened the transposed annotated heatmap layout for readability.
+- Reduced the effective plot width so the 11 cluster columns render as narrower boxes.
+- Increased the x-axis cell-type label font size from `8` to `11`.
+- Increased the motif-row height scaling from `0.35` to `0.45` inches per row so the TF-MoDISco logos are easier to read.
+- Re-ran the HPC annotation and heatmap step successfully.
+- Refreshed output PNG sizes after the tighter-width rerender:
+  - `pattern_clustermap_counts_annotated.png`: `509K`
+  - `pattern_clustermap_znorm_annotated.png`: `505K`

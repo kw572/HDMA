@@ -665,6 +665,7 @@ def save_clustermap(
     sns.set_theme(style="white")
     row_cluster = data.shape[0] > 1
     col_cluster = data.shape[1] > 1
+    width = min(width, max(14.0, data.shape[1] * 1.2))
     grid = sns.clustermap(
         data,
         cmap="coolwarm",
@@ -687,7 +688,7 @@ def save_clustermap(
         grid.ax_heatmap.get_xticklabels(),
         rotation=90,
         ha="center",
-        fontsize=8,
+        fontsize=11,
     )
     if pattern_ppms is not None:
         if logo_axis == "row":
@@ -743,7 +744,7 @@ def main(args: argparse.Namespace) -> None:
         data=counts_df_t,
         output_path=args.plots_dir / "pattern_clustermap_counts_annotated.png",
         width=args.heatmap_width,
-        height=max(args.heatmap_height, len(counts_df_t.index) * 0.35),
+        height=max(args.heatmap_height, len(counts_df_t.index) * 0.45),
         title="CREsted-style motif compendium clustermap (counts, annotated, transposed)",
         colorbar_label="Motif count / importance",
         center=0,
@@ -754,7 +755,7 @@ def main(args: argparse.Namespace) -> None:
         data=zscore_df_t,
         output_path=args.plots_dir / "pattern_clustermap_znorm_annotated.png",
         width=args.heatmap_width,
-        height=max(args.heatmap_height, len(zscore_df_t.index) * 0.35),
+        height=max(args.heatmap_height, len(zscore_df_t.index) * 0.45),
         title="CREsted-style motif compendium clustermap (motif-row z-score, annotated, transposed)",
         colorbar_label="Motif-row z-score",
         center=0,
