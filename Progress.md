@@ -371,3 +371,11 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
   - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/pattern_matrix_annotated_znorm.tsv`
   - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/pattern_clustermap_counts_annotated.png`
   - `/scratch1/kuangtse/HDMA/code/03-chrombpnet/data/NCC_36hpf/work/02b-compendium/crested_patterns/plots/pattern_clustermap_znorm_annotated.png`
+
+### 2026-05-28 15:28 PT
+
+- Increased the transposed heatmap height scaling from `0.22` to `0.35` inches per motif row so the 45-row compendium is less vertically compressed.
+- Re-ran the HPC post-process successfully.
+- The refreshed PNG sizes increased substantially, consistent with the taller layout:
+  - `pattern_clustermap_counts_annotated.png`: `548K`
+  - `pattern_clustermap_znorm_annotated.png`: `545K`
