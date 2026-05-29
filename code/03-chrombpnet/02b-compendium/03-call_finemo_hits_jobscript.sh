@@ -103,11 +103,23 @@ if [[ ! -f "${out_dir%/}/hits.tsv" ]]; then
     --no-seqlets
 fi
 
-if [[ -f "${out_dir}/hits.bed" && ! -f "${out_dir}/hits.bed.gz" ]]; then
+if [[ -f "${out_dir}/hits.bed" ]]; then
   load_optional_module biology
   load_optional_module samtools
-  bgzip -c "${out_dir}/hits.bed" > "${out_dir}/hits.bed.gz"
-  tabix -p bed "${out_dir}/hits.bed.gz"
+  if command -v bgzip >/dev/null 2>&1; then
+    if [[ ! -s "${out_dir}/hits.bed.gz" || "${out_dir}/hits.bed" -nt "${out_dir}/hits.bed.gz" ]]; then
+      bgzip -c "${out_dir}/hits.bed" > "${out_dir}/hits.bed.gz"
+    fi
+    if command -v tabix >/dev/null 2>&1; then
+      if [[ ! -s "${out_dir}/hits.bed.gz.tbi" || "${out_dir}/hits.bed.gz" -nt "${out_dir}/hits.bed.gz.tbi" ]]; then
+        tabix -f -p bed "${out_dir}/hits.bed.gz"
+      fi
+    else
+      echo "WARNING: tabix not found; leaving ${out_dir}/hits.bed.gz unindexed."
+    fi
+  else
+    echo "WARNING: bgzip not found; skipping BED compression and continuing to compendium reconciliation."
+  fi
 fi
 
 "${PYTHON_BIN}" "${SCRIPT_DIR}/03-map_finemo_to_compendium.py" \

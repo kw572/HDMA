@@ -418,6 +418,35 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
 - Updated the MEME parser to preserve separate motif IDs and names, which is required for JASPAR headers of the form `MOTIF <matrix_id> <TF name>`.
 - Re-ran the HPC annotation and heatmap step with:
   - `CRESTED_ANNOTATION_DB=jaspar2026`
+
+## 02b Fi-NeMo Bring-up
+
+### 2026-05-28 17:27 PT
+
+- Monitored one-dataset Fi-NeMo pilot job `9016484` after the earlier `finemo` binary-path fix.
+- Final status:
+  - `sacct` reports `FAILED` with exit code `127:0`
+  - elapsed time: `00:54:17`
+- Successful milestones before failure:
+  - `intermediate_inputs.npz` was created
+  - Fi-NeMo `call-hits` completed and wrote `hits.tsv`, `hits_unique.tsv`, `motif_occurrences.tsv`, `motif_report.tsv`, `report.html`, and the standard distribution plots
+  - this confirms the pilot is able to run the substantive hit-calling workload in the current environment, albeit on CPU fallback
+- Exact runtime blocker from `Log/02b-finemo_1_Jaw_Hyoid-9016484.out`:
+  - `/var/spool/slurm/d/job9016484/slurm_script: line 109: bgzip: command not found`
+- Additional environment notes captured from the same log:
+  - optional module loads for `biology` and `samtools` were unavailable on this node
+  - Fi-NeMo warned `No GPU available. Running on CPU.`
+- Resolution:
+  - patched `03-call_finemo_hits_jobscript.sh` so post-processing no longer hard-fails when `bgzip` or `tabix` are absent
+  - the jobscript now:
+    - compresses `hits.bed` only when `bgzip` is actually available
+    - indexes with `tabix` only when `tabix` is available
+    - emits a warning and continues to compendium reconciliation otherwise
+  - also treats zero-byte `hits.bed.gz` outputs from the failed attempt as stale and rewrites them when `bgzip` is present on a later rerun
+- Next action:
+  - syntax-check the updated jobscript
+  - resync `02b-compendium` to the HPC run checkout
+  - resubmit the one-dataset pilot and verify that `hits.compendium.tsv.gz` and `hits.compendium.summary.json` are produced
 - Verified the run completed successfully and the output summary now reports:
   - `annotation_mode: jaspar2026`
   - `n_jaspar2026_motifs: 1019`
@@ -493,3 +522,17 @@ Set up and run a CREsted-style motif compendium pipeline at `code/03-chrombpnet/
   - `/var/spool/slurm/d/job9016424/slurm_script: line 74: finemo: command not found`
 - Cause: even after activating the preferred Fi-NeMo venv, the non-interactive Slurm job environment did not reliably expose the `finemo` console script on `PATH`.
 - Resolution: updated `03-call_finemo_hits_jobscript.sh` to resolve and call `FINEMO_BIN` and `PYTHON_BIN` explicitly from the selected venv (`/scratch1/${USER}/venvs/finemo310` by default), with `command -v` fallbacks only if those explicit paths are unavailable.
+
+### 2026-05-28 16:36 PT
+
+- Resubmitted the one-dataset Fi-NeMo pilot after the explicit-binary fix:
+  - job id: `9016484`
+- The job is now running on node `e21-01` and has progressed into Fi-NeMo proper, past the earlier startup failures.
+- Verified current pilot output directory exists and now contains:
+  - `intermediate_inputs.npz`
+- New runtime warning observed in the live log:
+  - `RuntimeWarning: No GPU available. Running on CPU.`
+- Interpretation:
+  - preprocessing completed successfully
+  - the job is still active
+  - the next question is whether CPU fallback is merely slow or becomes the next blocker
