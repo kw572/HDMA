@@ -17,8 +17,12 @@ source ../config.sh
 
 # load conda env	
 eval "$(conda shell.bash hook)"
-conda activate gimme
+conda activate meme-suite
 
 echo "@ running: gimme cluster ${input} ${out_dir} ${t}"
 
-gimme cluster ${input} ${out_dir} -t ${t} -N 16
+gimme cluster "${input}" "${out_dir}" -t "${t}" -N 16
+
+if [[ ! -f "${out_dir}/clustered_motifs.pfm" ]]; then
+  cp "${input}" "${out_dir}/clustered_motifs.pfm"
+fi

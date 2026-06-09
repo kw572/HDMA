@@ -32,11 +32,22 @@ echo -e "\t@ ${alpha}"
 echo -e "\t@ ${alpha_nocompo}"
 echo -e "\t@ ${motifs_nocompo}"
 
-# load conda environment
-# NOTE: this call to conda triggers an unbound variable error, hence we 
-# use set -eo pipefail instead of -euo pipefail
-eval "$(conda shell.bash hook)"
-conda activate finemo
+# Prefer an explicit virtualenv on HPC, but keep the legacy conda path as a fallback.
+FINEMO_VENV="${FINEMO_VENV:-/scratch1/${USER}/venvs/finemo310}"
+if [[ ! -x "${FINEMO_VENV}/bin/activate" && -x "/scratch1/${USER}/venvs/finemo/bin/activate" ]]; then
+  FINEMO_VENV="/scratch1/${USER}/venvs/finemo"
+elif [[ ! -x "${FINEMO_VENV}/bin/activate" && -x "$HOME/venvs/finemo/bin/activate" ]]; then
+  FINEMO_VENV="$HOME/venvs/finemo"
+fi
+if [[ -x "${FINEMO_VENV}/bin/activate" ]]; then
+  # shellcheck disable=SC1090
+  source "${FINEMO_VENV}/bin/activate"
+else
+  # NOTE: this call to conda triggers an unbound variable error, hence we 
+  # use set -eo pipefail instead of -euo pipefail
+  eval "$(conda shell.bash hook)"
+  conda activate finemo
+fi
 
 load_optional_module() {
   local mod="$1"

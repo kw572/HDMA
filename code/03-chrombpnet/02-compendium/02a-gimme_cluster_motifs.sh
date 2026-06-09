@@ -1,52 +1,66 @@
 #!/bin/bash
 
+# Purpose: cluster per-dataset PFMs with gimme motifs.
 
-# Purpose: for all the cell types in each organ, run gimmemotifs cluster routine
-# for all motifs from those clusters. The output is a set of PFMs, one per cluster, which are the averages
-# of the PFMs for all motifs in the respective cluster.
-
-# NOTE: re: gimme motifs installation
-# I installed gimmemotifs, inside a _conda_ environment but using mamba install.
-# mamba install let me successfully install the package, while the conda env
-# lets me activate it / access gimme inside a shell as below.
-# This is run for both pos_patterns and neg_patterns separately.
-	
 set -euo pipefail
 
-# SETUP ------------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# source configuration variables
-source ../config.sh
+source "${SCRIPT_DIR}/../config.sh"
 
-# RUN GIMME CLUSTER ------------------------------------------------------------
+slurm_job_active() {
+  local job_name="$1"
+  squeue -h -u "${USER}" -n "${job_name}" -t PENDING,RUNNING,CONFIGURING,COMPLETING,SUSPENDED 2>/dev/null | grep -q .
+}
 
-# for each organ, run gimme cluster on the positive patterns
+pfm_has_motifs() {
+  local pfm_path="$1"
+  [[ -s "${pfm_path}" ]] && grep -q '^>' "${pfm_path}"
+}
 
-prefixes=( Adrenal Brain Eye Heart Liver Lung Muscle Skin Spleen Stomach Thymus Thyroid )
+compendium_dir="${compendium_dir:-${base_dir}/02-compendium}"
+pfm_dir="${pfm_dir:-${compendium_dir}/pfm}"
+gimme_cluster_dir="${gimme_cluster_dir:-${compendium_dir}/gimme_cluster}"
 
-for prefix in ${prefixes[@]}; do
+dataset_filter_regex="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
+pattern_types=(pos_patterns neg_patterns)
 
-  key="${prefix}.counts.neg_patterns"
-	t=0.8
-	ncpus="16"
+datasets=$(
+  find "${pfm_dir}" -maxdepth 1 -type f -name '*.counts.pos_patterns.pfm' -print |
+    while IFS= read -r path; do
+      basename "${path}" '.counts.pos_patterns.pfm'
+    done |
+    sort -u
+)
 
-	params="t${t}_n${ncpus}"
-	out_dir=${gimme_cluster_dir%/}/${key}_${params}
+if [[ -n "${dataset_filter_regex}" ]]; then
+  datasets=$(printf '%s\n' ${datasets} | grep -E "${dataset_filter_regex}" || true)
+fi
 
-	echo "@ input: ${pfm_dir%/}/${key}.pfm"
-	echo "@ output: ${out_dir}"
+for dataset in ${datasets}; do
+  for pattern_type in "${pattern_types[@]}"; do
+    key="${dataset}.counts.${pattern_type}"
+    t=0.8
+    ncpus="16"
+    params="t${t}_n${ncpus}"
+    input="${pfm_dir%/}/${key}.pfm"
+    out_dir="${gimme_cluster_dir%/}/${key}_${params}"
 
-	# make output directory if it doesn't exist
-	[[ -d ${out_dir} ]] || mkdir -p ${out_dir}
+    [[ -f "${input}" ]] || { echo "@ missing ${input}, skipping."; continue; }
+    [[ -d "${out_dir}" ]] || mkdir -p "${out_dir}"
 
-	# RUN GIMME CLUSTER ------------------------------------------------------------
-
-	job_name="02-gimme_cluster_${key}_${params}"
-	JOBSCRIPT=02-jobscript.sh
-	echo "@ submitting: gimme cluster ${pfm_dir%/}/${key}.pfm ${out_dir} ${t}"
-
-	sbatch -J ${job_name} ${JOBSCRIPT} ${pfm_dir%/}/${key}.pfm ${out_dir} ${t}
-
-	sleep 2s
-
+    job_name="02-gimme_cluster_${key}_${params}"
+    if [[ -f "${out_dir}/clustered_motifs.pfm" ]]; then
+      echo "@ found clustered motifs for ${key}, skipping."
+    elif ! pfm_has_motifs "${input}"; then
+      echo "@ ${key} has no motifs in ${input}; writing empty clustered output and skipping gimme."
+      : > "${out_dir}/clustered_motifs.pfm"
+    elif slurm_job_active "${job_name}"; then
+      echo "@ ${job_name} already queued or running, skipping."
+    else
+      echo "@ submitting: gimme cluster ${input} ${out_dir} ${t}"
+      sbatch -J "${job_name}" "${SCRIPT_DIR}/02a-jobscript.sh" "${input}" "${out_dir}" "${t}"
+      sleep 2s
+    fi
+  done
 done

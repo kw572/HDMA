@@ -26,6 +26,7 @@ source ../config.sh
 
 finemo_param="counts_v0.23_a0.8_all"
 ref_fasta="${ref_fasta}"
+dataset_filter_regex="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
 
 
 # make out dir
@@ -39,6 +40,9 @@ JOBSCRIPT=07-jobscript.sh
 
 # find which cell types to keep
 datasets=$(awk '{print $1}' ${chrombpnet_models_keep2})
+if [[ -n "${dataset_filter_regex}" ]]; then
+  datasets=$(printf '%s\n' ${datasets} | grep -E "${dataset_filter_regex}" || true)
+fi
   
 
 for dataset in ${datasets[@]}; do
@@ -46,13 +50,16 @@ for dataset in ${datasets[@]}; do
     echo "@ ${dataset}"
 
     frag_file=${cluster_frags_dir%/}/fragments/${dataset}__sorted.tsv.gz
+    if [[ ! -f "${frag_file}" ]]; then
+      frag_file=${cluster_frags_dir%/}/fragments/${dataset}__sorted.tsv
+    fi
     peaks_bed=${chrombpnet_peaks_dir%/}/${dataset}__peaks_bpnet.narrowPeak
     nucleoatac_out="${output_dir%/}/${dataset}/"
     nucleoatac_out_prefix=${nucleoatac_out}/${dataset}
     hits="${hits_reconciled_dir}/${dataset}/${finemo_param}/hits_unique.reconciled.annotated.tsv.gz"
 
     # generate the output dirs if it doesn't exist yet
-    [[ -f ${nucleoatac_out} ]] || mkdir -p ${nucleoatac_out}
+    [[ -d ${nucleoatac_out} ]] || mkdir -p ${nucleoatac_out}
     
     if [[ -f "${nucleoatac_out%/}/${dataset}.nucmap_combined.bed.gz" ]]; then
       echo -e "\tfound nucleosome calls, skipping..."

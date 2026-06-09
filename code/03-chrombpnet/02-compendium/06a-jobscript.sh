@@ -12,14 +12,25 @@ alpha=$5
 # dataset="Thyroid_c7"
 # finemo_param="counts_a0.7_post_filter"
 
-# load conda environment
-eval "$(conda shell.bash hook)"
-conda activate finemo
+# Prefer an explicit virtualenv on HPC, but keep the legacy conda path as a fallback.
+FINEMO_VENV="${FINEMO_VENV:-/scratch1/${USER}/venvs/finemo310}"
+if [[ ! -x "${FINEMO_VENV}/bin/activate" && -x "/scratch1/${USER}/venvs/finemo/bin/activate" ]]; then
+  FINEMO_VENV="/scratch1/${USER}/venvs/finemo"
+elif [[ ! -x "${FINEMO_VENV}/bin/activate" && -x "$HOME/venvs/finemo/bin/activate" ]]; then
+  FINEMO_VENV="$HOME/venvs/finemo"
+fi
+if [[ -x "${FINEMO_VENV}/bin/activate" ]]; then
+  # shellcheck disable=SC1090
+  source "${FINEMO_VENV}/bin/activate"
+else
+  eval "$(conda shell.bash hook)"
+  conda activate finemo
+fi
 
 source ../config.sh
 
 # set up params
-bias_params="Heart_c0_thresh0.4"
+bias_params="${BIAS_PARAMS:-${chrombpnet_bias_params}}"
 unified_h5="${base_dir%/}/02-compendium/modisco_compiled/modisco_compiled.h5"
 
 peaks_bed="${chrombpnet_peaks_dir%/}/${dataset}__peaks_bpnet.narrowPeak"

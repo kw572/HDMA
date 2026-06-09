@@ -7,7 +7,7 @@
 # from ~100 objects.
 
 
-import sys
+import argparse
 import h5py as h5
 import numpy as np
 import pandas as pd
@@ -15,22 +15,27 @@ import os
 import modiscolite.report
 
 
-# SET UP --------------------------------------------------------
+def parse_args():
+    parser = argparse.ArgumentParser(description="Compile merged MoDISco objects into one H5/TSV bundle.")
+    parser.add_argument("--modisco-merged-dir", required=True, type=str)
+    parser.add_argument("--cluster-key", required=True, type=str)
+    parser.add_argument("--out-h5", required=True, type=str)
+    parser.add_argument("--out-tsv", required=True, type=str)
+    return parser.parse_args()
 
-with open("../../ROOT_DIR.txt", 'r') as f:
-  hdma_path = f.readline().strip() 
 
-compiled_modisco_h5_path = hdma_path + "output/03-chrombpnet/02-compendium/modisco_compiled/modisco_compiled.h5"
-compiled_modisco_tsv_path = hdma_path + "output/03-chrombpnet/02-compendium/modisco_compiled/modisco_compiled.tsv"
-cluster_key_path = hdma_path + "output/03-chrombpnet/02-compendium/gimme_cluster/gimme_cluster_all_cluster_key.tsv"
+args = parse_args()
+
+compiled_modisco_h5_path = args.out_h5
+compiled_modisco_tsv_path = args.out_tsv
+cluster_key_path = args.cluster_key
 
 cluster_key = pd.read_csv(cluster_key_path, sep="\t", header=None, names=["gimme_cluster", "pattern_class", "component_patterns", "batch", "n_component_patterns", "n_seqlets"])
-cluster_key.head()
 
 
 # COMPILE PATTERNS ----------------------------------------------
 # create a dict from pattern to modisco merged file
-input_files = {os.path.basename(root): os.path.join(root, file) for root, dirs, files in os.walk(hdma_path + "output/03-chrombpnet/02-compendium/modisco_merged/")
+input_files = {os.path.basename(root): os.path.join(root, file) for root, dirs, files in os.walk(args.modisco_merged_dir)
                for file in files if file == "merged_modisco.h5"}
 
 # check we have the same number of input files as clusters in the cluster key
@@ -77,7 +82,7 @@ with h5.File(compiled_modisco_h5_path, "w") as compiled_modisco:
 
 # also combine all the TSVs into one
 merged_report_long = pd.concat([pd.read_csv(os.path.join(root, file), sep = "\t")
-                                for root, dirs, files in os.walk(hdma_path + "output/03-chrombpnet/02-compendium/modisco_merged/")
+                                for root, dirs, files in os.walk(args.modisco_merged_dir)
                for file in files if file == "merged_modisco.tsv"])
 
 merged_report_long.to_csv(compiled_modisco_tsv_path, sep = "\t", index = False)

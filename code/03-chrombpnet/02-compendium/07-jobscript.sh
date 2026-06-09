@@ -14,12 +14,26 @@ peaks=${4}
 fasta=${5}
 hits=${6}
 
-set -eo pipefail
+set -euo pipefail
 
 # setup environment
-module load python/2.7.13
-eval "$(conda shell.bash hook)"
-conda activate nucleoatac
+NUCLEOATAC_VENV="${NUCLEOATAC_VENV:-/scratch1/${USER}/venvs/nucleoatac310}"
+NUCLEOATAC_PREFIX="${NUCLEOATAC_PREFIX:-/scratch1/${USER}/envs/nucleoatac27}"
+if [[ ! -x "${NUCLEOATAC_VENV}/bin/activate" && -x "/scratch1/${USER}/venvs/nucleoatac/bin/activate" ]]; then
+  NUCLEOATAC_VENV="/scratch1/${USER}/venvs/nucleoatac"
+elif [[ ! -x "${NUCLEOATAC_VENV}/bin/activate" && -x "$HOME/venvs/nucleoatac/bin/activate" ]]; then
+  NUCLEOATAC_VENV="$HOME/venvs/nucleoatac"
+fi
+if [[ -x "${NUCLEOATAC_VENV}/bin/activate" ]]; then
+  # shellcheck disable=SC1090
+  source "${NUCLEOATAC_VENV}/bin/activate"
+elif [[ -x "${NUCLEOATAC_PREFIX}/bin/nucleoatac" ]]; then
+  export PATH="${NUCLEOATAC_PREFIX}/bin:${PATH}"
+else
+  module load python/2.7.13
+  eval "$(conda shell.bash hook)"
+  conda activate nucleoatac
+fi
 
 # check version
 nucleoatac --version
@@ -90,7 +104,7 @@ fi
 	
 
 # ------------------------------------------------------------------------------
-python 07-calc_dyad_dist.py ${out}.occpeaks.bed.gz ${out} --max_dist 250 --k_nearesst 100
+python 07-calc_dyad_dist.py ${out}.occpeaks.bed.gz ${out} --max_dist 250 --k_nearest 100
 
 
 # ------------------------------------------------------------------------------

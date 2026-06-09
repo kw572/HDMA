@@ -16,6 +16,10 @@ source ../config.sh
 eval "$(conda shell.bash hook)"
 conda activate modiscolite
 
+if [[ -z "${TOMTOM_EXEC_PATH:-}" && -x "${HOME}/.conda/envs/meme-suite/bin/tomtom" ]]; then
+  export TOMTOM_EXEC_PATH="${HOME}/.conda/envs/meme-suite/bin/tomtom"
+fi
+
 load_optional_module() {
   local mod="$1"
   [[ -n "${mod}" ]] || return 0
@@ -32,13 +36,15 @@ done
 
 compiled_h5=$modisco_comp_dir/modisco_compiled.h5
 out_dir=$modisco_comp_dir
+meme_db="${VIERSTRA_MEME_DB:-${vierstra_meme_db}}"
 
 echo $compiled_h5
 echo $out_dir
 
 python -u 04b-get_tomtom_matches.py --modisco-h5 $compiled_h5 \
     --out-dir ${out_dir} \
-    --meme-db ${vierstra_dir}/all.dbs.meme \
+    --meme-db ${meme_db} \
+    --tomtom-exec "${TOMTOM_EXEC_PATH:-tomtom}" \
     --verbose True
                     
 echo "done."

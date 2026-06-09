@@ -21,6 +21,30 @@ import pandas as pd
 from datetime import datetime
 import argparse
 
+class FallbackPatternMergeNode:
+    def __init__(self, pattern, child_nodes=None):
+        self.pattern = pattern
+        self.child_nodes = child_nodes or []
+
+
+class FallbackPatternMergeHierarchy:
+    def __init__(self, root_nodes):
+        self.root_nodes = root_nodes
+
+
+def parse_component_pattern(pattern: str) -> tuple[str, str]:
+    parts = pattern.split("__")
+    if len(parts) < 2:
+        raise ValueError(f"Unrecognized component pattern format: {pattern}")
+
+    celltype = parts[0]
+    pattern_token = parts[-1]
+    token_parts = pattern_token.split(".")
+    if len(token_parts) < 2:
+        raise ValueError(f"Unrecognized pattern token format: {pattern}")
+
+    return celltype, token_parts[-1]
+
 # need full paths!
 def parse_args():
     parser = argparse.ArgumentParser(description="Merge modisco patterns.", formatter_class=argparse.RawTextHelpFormatter)
@@ -78,6 +102,44 @@ def parse_args():
 
     return args
 
+def collapse_patterns_with_backoff(all_patterns, track_set, min_overlap,
+                                   prob_and_pertrack_sim_merge_thresholds,
+                                   prob_and_pertrack_sim_dealbreaker_thresholds,
+                                   min_frac, min_num, flank_to_add, window_size,
+                                    bg_freq, subsample_candidates):
+    last_error = None
+    for subsample_size in subsample_candidates:
+        print(f"\t@ trying merge with max_seqlets_subsample={subsample_size}")
+        try:
+            merged_patterns, pattern_merge_hierarchy = SimilarPatternsCollapser(
+                patterns=all_patterns,
+                track_set=track_set,
+                min_overlap=min_overlap,
+                prob_and_pertrack_sim_merge_thresholds=prob_and_pertrack_sim_merge_thresholds,
+                prob_and_pertrack_sim_dealbreaker_thresholds=prob_and_pertrack_sim_dealbreaker_thresholds,
+                min_frac=min_frac,
+                min_num=min_num,
+                flank_to_add=flank_to_add,
+                window_size=window_size,
+                bg_freq=bg_freq,
+                max_seqlets_subsample=subsample_size)
+            return merged_patterns, pattern_merge_hierarchy
+        except ValueError as err:
+            if "negative dimensions" not in str(err):
+                raise
+            last_error = err
+            print(f"\t@ merge failed at subsample {subsample_size}: {err}")
+
+    if last_error is not None:
+        raise last_error
+
+    raise RuntimeError("No subsample candidates were provided for pattern collapsing.")
+
+
+def build_identity_merge_fallback(all_patterns):
+    root_nodes = [FallbackPatternMergeNode(pattern=pattern) for pattern in all_patterns]
+    return all_patterns, FallbackPatternMergeHierarchy(root_nodes=root_nodes)
+
 
 def main(args):
     
@@ -124,11 +186,7 @@ def main(args):
             
             # for each component pattern, extract the celltype and pattern name
             for pattern in component_patterns:
-                pattern_components = pattern.split("__")
-                pattern_celltype = pattern_components[0]
-                # split off the positive/negative prefix, because patterns names don't have those
-                # prefixes in the modisco h5 files
-                pattern_name = pattern_components[1].split(".")[1]
+                pattern_celltype, pattern_name = parse_component_pattern(pattern)
                 components.append({ "celltype": pattern_celltype,
                                     "name": pattern_name
                 })
@@ -292,18 +350,26 @@ def main(args):
         # MERGE PATTERNS -----------------------------------------------------------
         # merge and collapse patterns
         print(f"\t@ merging patterns [{datetime.now().strftime('%H:%M:%S')}]")
-        merged_patterns, pattern_merge_hierarchy = SimilarPatternsCollapser(
-            patterns=all_patterns,
-            track_set=track_set,
-            min_overlap=min_overlap,
-            prob_and_pertrack_sim_merge_thresholds=prob_and_pertrack_sim_merge_thresholds,
-            prob_and_pertrack_sim_dealbreaker_thresholds=prob_and_pertrack_sim_dealbreaker_thresholds,
-            min_frac=min_frac,
-            min_num=min_num,
-            flank_to_add=flank_to_add,
-            window_size=window_size,
-            bg_freq=bg_freq,
-            max_seqlets_subsample=max_seqlets_subsample)
+        subsample_candidates = [max_seqlets_subsample, 200, 100, 50, 25]
+        subsample_candidates = list(dict.fromkeys(subsample_candidates))
+        try:
+            merged_patterns, pattern_merge_hierarchy = collapse_patterns_with_backoff(
+                all_patterns=all_patterns,
+                track_set=track_set,
+                min_overlap=min_overlap,
+                prob_and_pertrack_sim_merge_thresholds=prob_and_pertrack_sim_merge_thresholds,
+                prob_and_pertrack_sim_dealbreaker_thresholds=prob_and_pertrack_sim_dealbreaker_thresholds,
+                min_frac=min_frac,
+                min_num=min_num,
+                flank_to_add=flank_to_add,
+                window_size=window_size,
+                bg_freq=bg_freq,
+                subsample_candidates=subsample_candidates)
+        except ValueError as err:
+            if "negative dimensions" not in str(err):
+                raise
+            print(f"\t@ merge remained unstable after backoff; preserving input patterns without collapsing: {err}")
+            merged_patterns, pattern_merge_hierarchy = build_identity_merge_fallback(all_patterns)
         print(f"\t@ finished merging [{datetime.now().strftime('%H:%M:%S')}]")
     
         print("\t@ found", str(len(merged_patterns)), "merged patterns.")

@@ -21,18 +21,26 @@ set -euo pipefail
 
 source ../config.sh
 
-organ=$1
+organ="${1:-}"
 
 input_parallel=6
 alpha="0.8"
 finemo_param1="counts_v0.23_a${alpha}_all"
 finemo_param2="counts_v0.23_a${alpha}_nocompo"
-motif_annotation="04d-ChromBPNet_de_novo_motifs.tsv"
+motif_annotation="${compendium_annotation_tsv}"
 annotation_drop="exclude"
+dataset_filter_regex="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
 
 # get datasets
 datasets=$(awk '{print $1}' ${chrombpnet_models_keep2})
-datasets_organ=( $(echo ${datasets[@]} | tr ' ' '\n' | grep ${organ}) )
+if [[ -n "${dataset_filter_regex}" ]]; then
+  datasets=$(printf '%s\n' ${datasets} | grep -E "${dataset_filter_regex}" || true)
+fi
+if [[ -n "${organ}" ]]; then
+  datasets_organ=( $(printf '%s\n' ${datasets} | grep "^${organ}_" || true) )
+else
+  datasets_organ=( ${datasets} )
+fi
 
 # NOTE: to update labels, first clean up previous run:
 
@@ -50,13 +58,12 @@ datasets_to_do=$( for dataset in ${datasets_organ[@]}; do
 
 	done | uniq )
 
-datasets_to_do=${datasets_organ[@]}
-
 echo "@ Processing cell types: ${datasets_to_do[@]}"
-
-for i in ${datasets_to_do[@]}; do
-    echo $i
-    bash 06b-jobscript.sh $i ${finemo_param1} ${finemo_param2} ${motif_annotation} ${annotation_drop}
-done
-
-parallel --linebuffer -j ${input_parallel} bash 06b-jobscript.sh {} ${finemo_param1} ${finemo_param2} ${motif_annotation} ${annotation_drop} ::: ${datasets_to_do[@]}
+if command -v parallel >/dev/null 2>&1; then
+  parallel --linebuffer -j ${input_parallel} bash 06b-jobscript.sh {} ${finemo_param1} ${finemo_param2} ${motif_annotation} ${annotation_drop} ::: ${datasets_to_do[@]}
+else
+  for i in ${datasets_to_do[@]}; do
+      echo $i
+      bash 06b-jobscript.sh $i ${finemo_param1} ${finemo_param2} ${motif_annotation} ${annotation_drop}
+  done
+fi

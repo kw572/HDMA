@@ -137,6 +137,13 @@ This produces one MoDISco h5 object per supercluster, containing merged, non-red
 - `06b`: filter out low QC hits, reconcile overlapping hits, and get genomic annotations
 - `07`: run NucleoATAC per cell type
 
+### `02-compendium` versus `02b-compendium`
+
+- `02-compendium` is the full atlas-wide motif unification workflow. It converts per-dataset MoDISco outputs into PFMs, clusters motifs within organs and then across organs, merges redundant patterns, annotates the unified compendium, calls motif hits across datasets, reconciles overlaps, and optionally runs NucleoATAC.
+- `02b-compendium` is a narrower CREsted-style alternative. It builds a merged compendium directly from the per-dataset `counts_modisco_output.h5` files, annotates those merged patterns, renders a heatmap-style summary, then runs Fi-NeMo on each dataset and maps the resulting hits back onto the merged `02b` compendium IDs.
+- Operationally, `02-compendium/00-run_all_compendium.sbatch` orchestrates the end-to-end atlas compendium plus downstream hit-calling and NucleoATAC stages. `02b-compendium/00-run_all_compendium.sbatch` currently runs only the compendium-build and annotation/heatmap phases; Fi-NeMo submission remains a separate `03-call_finemo_hits.sh` step.
+- Use `02-compendium` when downstream analyses need the legacy unified motif catalog and reconciled hit set. Use `02b-compendium` when you want a CREsted / Fi-NeMo-centric view that preserves per-dataset motif instances while linking them back to merged motif families.
+
 
 ## 2b. CREsted-style motif compendium, `02b-compendium`
 

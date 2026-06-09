@@ -8,9 +8,13 @@ library(tidyr)
 library(readr)
 library(glue)
 
-out <- here::here("output/03-chrombpnet/02-compendium/modisco_compiled_anno/")
+out <- Sys.getenv("MODISCO_COMP_ANNO_DIR", unset = "")
+if (!nzchar(out)) {
+  out <- here::here("output/03-chrombpnet/02-compendium/modisco_compiled_anno/")
+}
+annotation_tsv <- Sys.getenv("MOTIF_ANNOTATION_FILE", unset = "04d-ChromBPNet_de_novo_motifs.tsv")
 
-motifs_compiled <- read_tsv("04d-ChromBPNet_de_novo_motifs.tsv")
+motifs_compiled <- read_tsv(annotation_tsv)
 
 table(motifs_compiled$category)
 # 

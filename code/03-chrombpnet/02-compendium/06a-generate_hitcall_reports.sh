@@ -17,19 +17,25 @@ set -euo pipefail
 
 source ../config.sh
 
-organ=$1
+organ="${1:-}"
 version=0.23
 alpha="0.8"
 finemo_param1="counts_v${version}_a${alpha}_all"
 finemo_param2="counts_v${version}_a${alpha}_nocompo"
-motif_anno="04d-ChromBPNet_de_novo_motifs.tsv"
+motif_anno="${compendium_annotation_tsv}"
 anno_drop="exclude"
+dataset_filter_regex="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
 
 # get datasets
 datasets=$(awk '{print $1}' ${chrombpnet_models_keep2})
-
-# filter to elements in the array that match the ${organ} variable
-datasets_organ=( $(echo ${datasets[@]} | tr ' ' '\n' | grep ${organ}) )
+if [[ -n "${dataset_filter_regex}" ]]; then
+  datasets=$(printf '%s\n' ${datasets} | grep -E "${dataset_filter_regex}" || true)
+fi
+if [[ -n "${organ}" ]]; then
+  datasets_organ=( $(printf '%s\n' ${datasets} | grep "^${organ}_" || true) )
+else
+  datasets_organ=( ${datasets} )
+fi
 
 datasets_to_do=$( for dataset in ${datasets_organ[@]}; do
 	    

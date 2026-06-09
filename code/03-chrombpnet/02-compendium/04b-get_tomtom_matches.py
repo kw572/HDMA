@@ -14,6 +14,7 @@ import h5py as h5
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from pandas.errors import EmptyDataError
 import os
 import modiscolite.report
 import types
@@ -30,6 +31,8 @@ def parse_args():
       parser.add_argument('--modisco-h5', type=str, help='Path to the compiled modisco h5 file.')
       parser.add_argument('--out-dir', type=str, help='Path to the output directory.')
       parser.add_argument('--meme-db', type=str, help='Path to the motifs database in meme format.')
+      parser.add_argument('--tomtom-exec', type=str, default=os.environ.get("TOMTOM_EXEC_PATH", "tomtom"),
+                          help='Path to the tomtom executable. Defaults to TOMTOM_EXEC_PATH or `tomtom` on PATH.')
       # parser.add_argument('--motif-anno', type=str, help='Path to the motif annotation file.')
       parser.add_argument('--trim-threshold', type=float, default=0.3, help='Probability threshold for trimming the PPM.')
       parser.add_argument('--trim-min-length', type=int, default=3, help='Minimum length of the trimmed PPM.')
@@ -97,7 +100,10 @@ def fetch_tomtom_matches(ppm, cwm, is_writing_tomtom_matrix, out_dir,
     
     # get e-value and query consensus as well as q-value
     print(tomtom_fname)
-    tomtom_results = pd.read_csv(tomtom_fname, sep="\t", usecols=(1, 4, 5, 7))
+    try:
+        tomtom_results = pd.read_csv(tomtom_fname, sep="\t", usecols=(1, 4, 5, 7))
+    except EmptyDataError:
+        tomtom_results = pd.DataFrame(columns=["Target_ID", "Query_consensus", "E-value", "q-value"])
 
     # TEMP
     # output_subdir = os.path.join(out_dir, "tomtom")
@@ -211,8 +217,27 @@ def main(args):
                 ppm = np.array(pattern['sequence'][:])
                 cwm = np.array(pattern['contrib_scores'][:]) 
             
-                r = fetch_tomtom_matches(ppm, cwm, is_writing_tomtom_matrix, out_dir, pattern_name, meme_db)
+                r = fetch_tomtom_matches(
+                    ppm,
+                    cwm,
+                    is_writing_tomtom_matrix,
+                    out_dir,
+                    pattern_name,
+                    meme_db,
+                    tomtom_exec_path=args.tomtom_exec,
+                )
                 
+                # Some patterns may yield no TOMTOM matches in the chosen database.
+                # Preserve the row and fill match fields with missing values instead
+                # of aborting the whole compiled-report step.
+                if r.empty:
+                    tomtom_results['query_consensus'].append(None)
+                    for j in range(n_matches):
+                        tomtom_results[f'match{j}'].append(None)
+                        tomtom_results[f'e_val{j}'].append(None)
+                        tomtom_results[f'qval{j}'].append(None)
+                    continue
+
                 # get query target consensus sequence
                 tomtom_results['query_consensus'].append(r.iloc[0]['Query_consensus'])
 
@@ -255,8 +280,12 @@ def main(args):
                 if pd.isnull(row[name]):
                     logos.append("NA")
                 else:
-                    modiscolite.report.make_logo(row[name], db_logo_dir, motifs)
-                    logos.append(f'./db_logos/{row[name]}.png')
+                    try:
+                        modiscolite.report.make_logo(row[name], db_logo_dir, motifs)
+                        logos.append(f'./db_logos/{row[name]}.png')
+                    except Exception as exc:
+                        print(f"WARNING: failed to render database logo for {row[name]}: {exc}")
+                        logos.append("NA")
             else:
                 break
 

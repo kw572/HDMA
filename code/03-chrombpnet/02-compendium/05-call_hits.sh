@@ -23,8 +23,8 @@ source ../config.sh
 output_dir=${hits_unified_scratch}
 mkdir -p ${output_dir}
 
-bias_params="Heart_c0_thresh0.4"
-organ="Spleen"
+bias_params="${BIAS_PARAMS:-${chrombpnet_bias_params}}"
+dataset_filter_regex="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
 
 # params for hit calling
 modisco_h5="${base_dir%/}/02-compendium/modisco_compiled/modisco_compiled.h5"
@@ -42,12 +42,12 @@ JOBSCRIPT=05-jobscript.sh
 # CONSTRUCT COMMANDS -----------------------------------------------------------
 
 # find which cell types to keep
-datasets=$(awk '{print $1}' ${chrombpnet_models_keep2})
-  
-# filter to elements in the array that match the ${organ} variable
-datasets_organ=( $(echo ${datasets[@]} | tr ' ' '\n' | grep ${organ}) )
+datasets=$(awk 'NF {print $1}' "${chrombpnet_models_keep2}")
+if [[ -n "${dataset_filter_regex}" ]]; then
+  datasets=$(printf '%s\n' ${datasets} | grep -E "${dataset_filter_regex}" || true)
+fi
 
-for dataset in ${datasets_organ[@]}; do
+for dataset in ${datasets}; do
 
     echo "@ ${dataset}"
 

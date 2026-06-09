@@ -11,7 +11,7 @@ set -euo pipefail
 source ../config.sh
 
 BATCH_SIZE=5
-bias_params="Heart_c0_thresh0.4"
+bias_params="${BIAS_PARAMS:-${chrombpnet_bias_params}}"
 out_dir=${modisco_merged_dir}
 model_head="counts"
 

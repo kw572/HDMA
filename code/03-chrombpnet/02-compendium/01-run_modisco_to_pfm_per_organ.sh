@@ -1,66 +1,96 @@
 #!/bin/bash
 
-# Purpose: convert the modisco CWMs to PFMs for gimme cluster. Patterns are 
-# concatenated for all cell types in each organ.
+# Purpose:
+# Convert MoDISco CWMs to PFMs for downstream gimme clustering.
+# Treat each dataset independently so the wrapper can operate without keep.tsv files.
 
 set -euo pipefail
 
-# PARAMETERS -------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# source configuration variables
-source ../config.sh
+source "${SCRIPT_DIR}/../config.sh"
 
-# load conda env	
 eval "$(conda shell.bash hook)"
-conda activate chrombpnet
+conda activate modiscolite
 
-# set bias model
-bias_params="Heart_c0_thresh0.4"
-bias_model="${bias_dir%/}/${bias_params}/models/bias.h5"
+compendium_dir="${compendium_dir:-${base_dir}/02-compendium}"
+pfm_dir="${pfm_dir:-${compendium_dir}/pfm}"
 
-# BEGIN SCRIPT -----------------------------------------------------------------
-all_pseudorep_dir="${cluster_frags_dir%/}/fragments"
+mkdir -p "${pfm_dir}"
 
-organs=( Adrenal Brain Eye Heart Liver Lung Muscle Skin Spleen Stomach Thymus Thyroid )
+bias_params="${BIAS_PARAMS:-${chrombpnet_bias_params}}"
+dataset_filter_regex="${CHROMBPNET_DATASET_FILTER_REGEX:-}"
 
-for organ in ${organs[@]}; do
-  
-  echo $organ
+search_root="${modisco_scratch%/}/bias_${bias_params}"
 
-  key1="${organ}.counts.pos_patterns"
-  out_file1=${pfm_dir%/}/${key1}.pfm
-  echo $out_file1
+if [[ ! -d "${search_root}" ]]; then
+  echo "@ ERROR: modisco search root missing:"
+  echo "${search_root}"
+  exit 1
+fi
 
-  key2="${organ}.counts.neg_patterns"
-  out_file2=${pfm_dir%/}/${key2}.pfm
-  echo $out_file2
-
-  # remove the old config file if it exists
-  config=${pfm_dir%/}/${organ}.counts.config.tsv
-  [[ -f $config ]] && rm $config
-  
-  # find which cell types to keep
-  datasets=$(awk '{print $1}' ${chrombpnet_models_keep2})
-  
-  # filter to elements in the array that match the ${organ} variable
-  datasets_organ=( $(echo ${datasets[@]} | tr ' ' '\n' | grep ${organ}) )
-
-  for dataset in ${datasets_organ[@]}; do
-  
-    echo ${dataset}
-    modisco_counts_h5=${modisco_scratch%/}/bias_${bias_params}/${dataset}/counts_modisco_output.h5
- 
-    # indicate the modisco file to use 
-    if [[ ! -f $modisco_counts_h5 ]]; then
-      echo "@ missing ${dataset} COUNTS modisco output."
-    else 
-      echo -e "${dataset}\t${modisco_counts_h5}" >> $config
+datasets=$(
+  find "${search_root}" \
+    -mindepth 1 \
+    -maxdepth 1 \
+    -type d |
+  while IFS= read -r dataset_path; do
+    dataset="$(basename "${dataset_path}")"
+    case "${dataset}" in
+      NA|Log|logs|tmp|scratch|qc)
+        continue
+        ;;
+    esac
+    if [[ -d "${dataset_path}/counts_modisco_report" ]]; then
+      printf '%s\n' "${dataset}"
     fi
+  done |
+  sort -u
+)
 
-  done
+if [[ -n "${dataset_filter_regex}" ]]; then
+  datasets=$(
+    printf '%s\n' ${datasets} |
+    grep -E "${dataset_filter_regex}" || true
+  )
+fi
 
-  # run the modisco to pfm conversion
-  python 01-modisco_to_pfm.py -c $config -o $out_file1 -p pos_patterns
-  python 01-modisco_to_pfm.py -c $config -o $out_file2 -p neg_patterns
+for dataset in ${datasets}; do
+  echo "================================================================="
+  echo "@ DATASET: ${dataset}"
+  echo "================================================================="
 
+  key1="${dataset}.counts.pos_patterns"
+  out_file1="${pfm_dir%/}/${key1}.pfm"
+
+  key2="${dataset}.counts.neg_patterns"
+  out_file2="${pfm_dir%/}/${key2}.pfm"
+
+  config="${pfm_dir%/}/${dataset}.counts.config.tsv"
+  [[ -f "${config}" ]] && rm -f "${config}"
+
+  modisco_counts_h5="${modisco_scratch%/}/bias_${bias_params}/${dataset}/counts_modisco_output.h5"
+
+  if [[ ! -f "${modisco_counts_h5}" ]]; then
+    echo "@ missing COUNTS modisco output:"
+    echo "${modisco_counts_h5}"
+    continue
+  fi
+
+  echo -e "${dataset}\t${modisco_counts_h5}" >> "${config}"
+  cat "${config}"
+
+  echo "@ generating POS PFMs"
+  python 01-modisco_to_pfm.py \
+    -c "${config}" \
+    -o "${out_file1}" \
+    -p pos_patterns
+
+  echo "@ generating NEG PFMs"
+  python 01-modisco_to_pfm.py \
+    -c "${config}" \
+    -o "${out_file2}" \
+    -p neg_patterns
 done
+
+echo "@ DONE"
