@@ -1,15 +1,22 @@
+import csv
+import hashlib
 import os
+import subprocess
 import sys
+import tempfile
 import threading
-from io import BytesIO
+from glob import glob
+from io import BytesIO, StringIO
 
 import logomaker
+import altair as alt
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
 import torch
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.patches import Rectangle
 try:
     from scipy.stats import ttest_rel
 except ImportError:
@@ -45,6 +52,9 @@ elif torch.cuda.is_available():
 else:
     DEVICE = torch.device("cpu")
 
+if DEVICE.type == "cuda":
+    torch.backends.cudnn.benchmark = True
+
 
 INPUTLEN = 2114
 OUTPUTLEN = 1000
@@ -53,6 +63,26 @@ DEFAULT_WINDOW_HALF_WIDTH = 250
 VALID_BASES = {"A", "C", "G", "T", "N"}
 DEFAULT_LOGO_YLIM = 0.03
 PROFILE_SHIFT = (INPUTLEN - OUTPUTLEN) // 2
+DEFAULT_FIMO_ENABLED = False
+DEFAULT_MOTIF_DATABASE = "JASPAR2022 vertebrates"
+DEFAULT_FIMO_PVALUE = 1e-4
+FIMO_BATCH_SIZE = 32
+
+MOTIF_DATABASE_SPECS = {
+    "JASPAR2022 vertebrates": {"filename": "JASPAR2022_vertebrates.pfm"},
+    "JASPAR2020 vertebrates": {"filename": "JASPAR2020_vertebrates.pfm"},
+    "HOCOMOCOv11 human": {"filename": "HOCOMOCOv11_HUMAN.pfm"},
+    "HOCOMOCOv11 mouse": {"filename": "HOCOMOCOv11_MOUSE.pfm"},
+}
+
+MOTIF_TRACK_COLORS = [
+    "#2563eb",
+    "#f97316",
+    "#16a34a",
+    "#dc2626",
+    "#7c3aed",
+    "#0891b2",
+]
 
 
 # =========================
@@ -201,6 +231,273 @@ def get_fold_model_paths(model_catalog, run_name, cell_type, fold_mode):
     if fold_mode == "1 fold":
         folds = folds[:1]
     return [fold_map[fold] for fold in folds], folds
+
+
+@st.cache_data
+def discover_motif_database_roots():
+    patterns = [
+        os.path.join(sys.prefix, "lib", "python*", "site-packages", "data", "motif_databases"),
+        os.path.join(sys.prefix, "lib", "python*", "dist-packages", "data", "motif_databases"),
+        "/opt/conda/lib/python*/site-packages/data/motif_databases",
+        "/usr/local/lib/python*/site-packages/data/motif_databases",
+        "/usr/local/lib/python*/dist-packages/data/motif_databases",
+        "/usr/lib/python*/dist-packages/data/motif_databases",
+    ]
+    candidates = []
+    for pattern in patterns:
+        candidates.extend(glob(pattern))
+
+    roots = []
+    seen = set()
+    for candidate in candidates:
+        real_candidate = os.path.realpath(candidate)
+        if os.path.isdir(real_candidate) and real_candidate not in seen:
+            roots.append(real_candidate)
+            seen.add(real_candidate)
+    return roots
+
+
+def resolve_motif_database_path(database_label):
+    spec = MOTIF_DATABASE_SPECS.get(database_label)
+    if spec is None:
+        raise ValueError(f"Unknown motif database: {database_label}")
+
+    for root in discover_motif_database_roots():
+        candidate = os.path.join(root, spec["filename"])
+        if os.path.isfile(candidate):
+            return candidate
+
+    raise FileNotFoundError(
+        f"Could not find the motif database for '{database_label}'. Checked: {', '.join(discover_motif_database_roots()) or 'no known roots'}"
+    )
+
+
+def motif_label_from_raw_name(raw_name):
+    if ".H11MO." in raw_name:
+        return raw_name.split(".H11MO.", 1)[0]
+
+    motif_label = raw_name
+    if "_" in raw_name:
+        motif_label = raw_name.split("_", 1)[1]
+    if "." in motif_label:
+        motif_label = motif_label.split(".", 1)[1]
+    return motif_label
+
+
+@st.cache_data
+def discover_available_motif_databases():
+    available = []
+    for label in MOTIF_DATABASE_SPECS:
+        try:
+            resolve_motif_database_path(label)
+        except FileNotFoundError:
+            continue
+        available.append(label)
+    return available
+
+
+@st.cache_data
+def prepare_fimo_database(database_label):
+    source_path = resolve_motif_database_path(database_label)
+    if source_path.endswith(".meme"):
+        return source_path
+
+    cache_root = os.path.join(tempfile.gettempdir(), "chrombpnet_fimo_databases")
+    os.makedirs(cache_root, exist_ok=True)
+
+    fingerprint = hashlib.sha1(
+        f"pfm2meme-v4:{source_path}:{os.path.getmtime(source_path)}:{os.path.getsize(source_path)}".encode("utf-8")
+    ).hexdigest()[:16]
+    stem = os.path.splitext(os.path.basename(source_path))[0]
+    converted_path = os.path.join(cache_root, f"{stem}.{fingerprint}.meme")
+    if os.path.isfile(converted_path):
+        return converted_path
+
+    motifs = []
+    current_name = None
+    current_rows = []
+    with open(source_path, encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith(">"):
+                if current_name and current_rows:
+                    motifs.append((current_name, current_rows))
+                current_name = line[1:].strip()
+                current_rows = []
+                continue
+
+            values = [float(value) for value in line.replace("[", " ").replace("]", " ").split()]
+            if len(values) != 4:
+                raise ValueError(f"Unsupported motif row in {source_path}: {line}")
+            current_rows.append(values)
+
+    if current_name and current_rows:
+        motifs.append((current_name, current_rows))
+    if not motifs:
+        raise ValueError(f"No motifs were parsed from {source_path}")
+
+    with open(converted_path, "w", encoding="utf-8") as handle:
+        handle.write("MEME version 4\n\n")
+        handle.write("ALPHABET= ACGT\n\n")
+        handle.write("strands: + -\n\n")
+        handle.write("Background letter frequencies\n")
+        handle.write("A 0.25 C 0.25 G 0.25 T 0.25\n\n")
+        for raw_name, rows in motifs:
+            motif_label = motif_label_from_raw_name(raw_name)
+            motif_label = motif_label.replace(" ", "_")
+            nsites = max(1, int(round(max(sum(row) for row in rows))))
+            handle.write(f"MOTIF {motif_label}\n")
+            handle.write(f"letter-probability matrix: alength= 4 w= {len(rows)} nsites= {nsites} E= 0\n")
+            for row in rows:
+                total = float(sum(row))
+                if total <= 0:
+                    probs = [0.25, 0.25, 0.25, 0.25]
+                else:
+                    probs = [value / total for value in row]
+                handle.write(" ".join(f"{prob:.8f}" for prob in probs) + "\n")
+            handle.write("\n")
+    return converted_path
+
+
+@st.cache_data
+def prepare_fimo_database_batches(database_label, batch_size=FIMO_BATCH_SIZE):
+    meme_path = prepare_fimo_database(database_label)
+    with open(meme_path, encoding="utf-8") as handle:
+        lines = handle.readlines()
+
+    motif_start_indexes = [idx for idx, line in enumerate(lines) if line.startswith("MOTIF ")]
+    if not motif_start_indexes:
+        return [meme_path]
+
+    header = lines[: motif_start_indexes[0]]
+    motif_start_indexes.append(len(lines))
+    cache_root = os.path.join(tempfile.gettempdir(), "chrombpnet_fimo_batches")
+    os.makedirs(cache_root, exist_ok=True)
+
+    fingerprint = hashlib.sha1(
+        f"{meme_path}:{os.path.getmtime(meme_path)}:{os.path.getsize(meme_path)}:{batch_size}".encode("utf-8")
+    ).hexdigest()[:16]
+    stem = os.path.splitext(os.path.basename(meme_path))[0]
+
+    batch_paths = []
+    for batch_number, start_idx in enumerate(range(0, len(motif_start_indexes) - 1, int(batch_size)), start=1):
+        batch_path = os.path.join(cache_root, f"{stem}.{fingerprint}.batch{batch_number:03d}.meme")
+        if not os.path.isfile(batch_path):
+            chunk_lines = list(header)
+            chunk_boundaries = motif_start_indexes[start_idx : start_idx + int(batch_size) + 1]
+            for left, right in zip(chunk_boundaries[:-1], chunk_boundaries[1:]):
+                chunk_lines.extend(lines[left:right])
+            with open(batch_path, "w", encoding="utf-8") as handle:
+                handle.writelines(chunk_lines)
+        batch_paths.append(batch_path)
+
+    return batch_paths
+
+
+def summarize_motif_label(hit):
+    label = hit.get("motif_alt_id") or hit.get("motif_id") or hit.get("pattern_name") or "motif"
+    if label == ".":
+        label = hit.get("motif_id") or hit.get("pattern_name") or "motif"
+    label = str(label).replace("_", " ")
+    return label if len(label) <= 24 else f"{label[:21]}..."
+
+
+def parse_fimo_tsv(fimo_stdout):
+    raw_lines = [line.strip() for line in fimo_stdout.splitlines() if line.strip()]
+    header_line = None
+    data_lines = []
+    for line in raw_lines:
+        if line.startswith("#pattern name"):
+            header_line = line[1:]
+            continue
+        if line.startswith("#"):
+            continue
+        data_lines.append(line)
+
+    if header_line is None:
+        header_line = "pattern name\tsequence name\tstart\tstop\tstrand\tscore\tp-value\tq-value\tmatched sequence"
+
+    rows = [header_line, *data_lines]
+    if len(rows) == 1:
+        return []
+
+    reader = csv.DictReader(StringIO("\n".join(rows)), delimiter="\t")
+    hits = []
+    for row in reader:
+        start_idx = max(0, int(row["start"]) - 1)
+        end_idx = max(start_idx + 1, int(row["stop"]))
+        pvalue = float(row["p-value"])
+        qvalue_text = row.get("q-value", "")
+        qvalue = float(qvalue_text) if qvalue_text not in {"", "nan"} else None
+        hit = {
+            "pattern_name": row.get("pattern name", ""),
+            "motif_id": row.get("motif_id") or row.get("pattern name", ""),
+            "motif_alt_id": row.get("motif_alt_id", ""),
+            "label": row.get("motif_alt_id") or row.get("motif_id") or row.get("pattern name") or "motif",
+            "start_idx": start_idx,
+            "end_idx": end_idx,
+            "strand": row.get("strand", "."),
+            "score": float(row["score"]),
+            "pvalue": pvalue,
+            "qvalue": qvalue,
+            "matched_sequence": row.get("matched_sequence", ""),
+        }
+        hit["display_label"] = summarize_motif_label(hit)
+        hits.append(hit)
+
+    hits.sort(key=lambda item: (item["pvalue"], -(item["end_idx"] - item["start_idx"]), item["start_idx"]))
+    return hits
+
+
+@st.cache_data(show_spinner=False)
+def scan_sequence_with_fimo(seq, database_label, pvalue_threshold, max_hits=None):
+    clean_seq = sanitize_sequence(seq)
+    invalid = validate_sequence(clean_seq)
+    if invalid:
+        raise ValueError(f"FIMO scan received invalid bases: {', '.join(invalid)}")
+    if not clean_seq:
+        return {
+            "database_label": database_label,
+            "hits": [],
+            "shown_hits": 0,
+            "total_hits": 0,
+            "pvalue_threshold": float(pvalue_threshold),
+        }
+
+    motif_db_paths = prepare_fimo_database_batches(database_label)
+    with tempfile.TemporaryDirectory(prefix="chrombpnet_fimo_") as tmpdir:
+        fasta_path = os.path.join(tmpdir, "query.fa")
+        with open(fasta_path, "w", encoding="utf-8") as handle:
+            handle.write(">query\n")
+            handle.write(clean_seq)
+            handle.write("\n")
+
+        all_hits = []
+        for motif_db_path in motif_db_paths:
+            result = subprocess.run(
+                ["fimo", "--text", "--thresh", f"{float(pvalue_threshold):.6g}", motif_db_path, fasta_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                stderr = (result.stderr or "").strip()
+                raise RuntimeError(
+                    f"FIMO failed on motif batch {os.path.basename(motif_db_path)}: {stderr or 'unknown error'}"
+                )
+            all_hits.extend(parse_fimo_tsv(result.stdout))
+
+    all_hits.sort(key=lambda item: (item["pvalue"], -(item["end_idx"] - item["start_idx"]), item["start_idx"]))
+    return {
+        "database_label": database_label,
+        "hits": all_hits,
+        "shown_hits": len(all_hits),
+        "total_hits": len(all_hits),
+        "pvalue_threshold": float(pvalue_threshold),
+    }
 
 
 # =========================
@@ -425,22 +722,56 @@ def reset_attr_model_state(model):
             except Exception:
                 pass
 
-def run_model(seq, pred_models, count_models):
-    seq = center_resize(seq)
-    x = one_hot_encode_dna(seq).unsqueeze(0).to(DEVICE)
 
-    profiles = []
-    counts = []
-    with torch.no_grad():
+def first_tensor_output(output):
+    if isinstance(output, (tuple, list)):
+        if not output:
+            raise ValueError("Model returned an empty output tuple/list.")
+        return output[0]
+    return output
+
+
+def run_model_batch(seqs, pred_models, count_models, batch_size=None):
+    resized = [center_resize(seq) for seq in seqs]
+    batch_size = max(1, int(batch_size or len(resized) or 1))
+
+    profiles_by_fold = []
+    counts_by_fold = []
+    with torch.inference_mode():
         for pred_model, count_model in zip(pred_models, count_models):
-            y = pred_model(x)
-            logcounts = count_model(x)
-            profiles.append(y[0].detach().cpu().numpy().reshape(-1))
-            counts.append(float(np.exp(logcounts.detach().cpu().numpy().reshape(-1)[0])))
+            fold_profiles = []
+            fold_counts = []
+            for start in range(0, len(resized), batch_size):
+                chunk = resized[start : start + batch_size]
+                x = torch.stack([one_hot_encode_dna(seq) for seq in chunk], dim=0).to(DEVICE, non_blocking=True)
+                y = first_tensor_output(pred_model(x))
+                logcounts = first_tensor_output(count_model(x))
+                fold_profiles.append(y.detach().cpu().numpy().reshape(len(chunk), -1))
+                fold_counts.append(np.exp(logcounts.detach().cpu().numpy().reshape(len(chunk), -1)[:, 0]))
+            profiles_by_fold.append(np.concatenate(fold_profiles, axis=0))
+            counts_by_fold.append(np.concatenate(fold_counts, axis=0))
 
-    profiles = np.stack(profiles, axis=0)
-    counts = np.asarray(counts, dtype=np.float64)
-    return profiles.mean(axis=0), float(counts.mean()), profiles.std(axis=0), float(counts.std(ddof=0)), profiles, counts
+    profiles = np.stack(profiles_by_fold, axis=0)
+    counts = np.stack(counts_by_fold, axis=0).astype(np.float64)
+    return profiles, counts
+
+
+def summarize_model_batch(profiles, counts, seq_index):
+    seq_profiles = profiles[:, seq_index, :]
+    seq_counts = counts[:, seq_index]
+    return (
+        seq_profiles.mean(axis=0),
+        float(seq_counts.mean()),
+        seq_profiles.std(axis=0),
+        float(seq_counts.std(ddof=0)),
+        seq_profiles,
+        seq_counts,
+    )
+
+
+def run_model(seq, pred_models, count_models):
+    profiles, counts = run_model_batch([seq], pred_models, count_models, batch_size=1)
+    return summarize_model_batch(profiles, counts, 0)
 
 
 def get_attr(seq, model_paths):
@@ -469,8 +800,15 @@ def get_attr(seq, model_paths):
 
 
 def run_all_outputs(before_seq, after_seq, pred_models, count_models, model_paths):
-    prof_before, cnt_before, prof_before_std, cnt_before_std, prof_before_folds, cnt_before_folds = run_model(before_seq, pred_models, count_models)
-    prof_after, cnt_after, prof_after_std, cnt_after_std, prof_after_folds, cnt_after_folds = run_model(after_seq, pred_models, count_models)
+    prediction_batch_size = max(1, len(model_paths))
+    profile_batch, count_batch = run_model_batch(
+        [before_seq, after_seq],
+        pred_models,
+        count_models,
+        batch_size=prediction_batch_size,
+    )
+    prof_before, cnt_before, prof_before_std, cnt_before_std, prof_before_folds, cnt_before_folds = summarize_model_batch(profile_batch, count_batch, 0)
+    prof_after, cnt_after, prof_after_std, cnt_after_std, prof_after_folds, cnt_after_folds = summarize_model_batch(profile_batch, count_batch, 1)
     attr_before, attr_before_std = get_attr(before_seq, model_paths)
     attr_after, attr_after_std = get_attr(after_seq, model_paths)
     attr_before = extract_attr_window(attr_before, len(before_seq))
@@ -733,11 +1071,162 @@ def add_window_labels(ax, selected_windows=None, deleted_windows=None):
     )
 
 
-def plot_logo_matrix(attr, title, sequence_start_1, highlights=None, selected_highlights=None, y_limit=None):
+def add_logo_highlights(ax, highlights=None, selected_highlights=None):
+    for start, end in selected_highlights or []:
+        if end > start:
+            ax.axvspan(start - 0.5, end - 0.5, color="#d1d5db", alpha=0.5)
+    for start, end in highlights or []:
+        if end > start:
+            ax.axvspan(start - 0.5, end - 0.5, color="#dbeafe", alpha=0.45)
+
+
+def assign_motif_track_rows(motif_hits):
+    placed = []
+    row_end_positions = []
+    for hit in sorted(motif_hits, key=lambda item: (item["start_idx"], item["end_idx"], item["pvalue"])):
+        placed_hit = dict(hit)
+        for row_idx, last_end in enumerate(row_end_positions):
+            if placed_hit["start_idx"] >= last_end:
+                row_end_positions[row_idx] = placed_hit["end_idx"]
+                placed_hit["track_row"] = row_idx
+                break
+        else:
+            row_end_positions.append(placed_hit["end_idx"])
+            placed_hit["track_row"] = len(row_end_positions) - 1
+        placed.append(placed_hit)
+    return placed, max(1, len(row_end_positions))
+
+
+def build_overlap_groups(motif_hits):
+    if not motif_hits:
+        return []
+
+    groups = []
+    current_group = [dict(sorted(motif_hits, key=lambda item: (item["start_idx"], item["end_idx"], item["pvalue"]))[0])]
+    current_end = current_group[0]["end_idx"]
+
+    for hit in sorted(motif_hits, key=lambda item: (item["start_idx"], item["end_idx"], item["pvalue"]))[1:]:
+        hit_copy = dict(hit)
+        if hit_copy["start_idx"] < current_end:
+            current_group.append(hit_copy)
+            current_end = max(current_end, hit_copy["end_idx"])
+        else:
+            groups.append(current_group)
+            current_group = [hit_copy]
+            current_end = hit_copy["end_idx"]
+
+    groups.append(current_group)
+    return groups
+
+
+def summarize_overlap_groups(motif_hits):
+    summaries = []
+    for group_idx, group in enumerate(build_overlap_groups(motif_hits)):
+        ordered_group = sorted(group, key=lambda item: (item["pvalue"], item["start_idx"], item["end_idx"]))
+        representative = dict(ordered_group[0])
+        representative["group_id"] = f"group_{group_idx}"
+        representative["overlap_count"] = len(ordered_group)
+        representative["group_hits"] = ordered_group
+        representative["start_idx"] = min(item["start_idx"] for item in ordered_group)
+        representative["end_idx"] = max(item["end_idx"] for item in ordered_group)
+        summaries.append(representative)
+    return summaries
+
+
+def draw_motif_track(
+    ax,
+    motif_scan,
+    seq_len,
+    tick_positions,
+    tick_labels,
+    axis_label,
+    highlights=None,
+    selected_highlights=None,
+):
+    hits = summarize_overlap_groups(motif_scan.get("hits", []))
+    add_logo_highlights(ax, highlights=highlights, selected_highlights=selected_highlights)
+    ax.set_xlim(-0.5, seq_len - 0.5)
+    ax.set_xticks(tick_positions)
+    ax.set_xticklabels(tick_labels, rotation=0)
+    ax.set_xlabel(axis_label)
+    ax.set_yticks([])
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_color("#94a3b8")
+
+    if not hits:
+        ax.set_ylim(-0.5, 0.5)
+        ax.text(
+            0.5,
+            0.5,
+            f"No FIMO hits in {motif_scan['database_label']} at p <= {motif_scan['pvalue_threshold']:.1e}",
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+            fontsize=9,
+            color="#475569",
+        )
+        ax.set_title("Motif hits", fontsize=10)
+        return
+
+    placed_hits, row_count = assign_motif_track_rows(hits)
+    ax.set_ylim(-0.6, row_count - 0.4)
+    ax.invert_yaxis()
+
+    for row_idx in range(row_count):
+        ax.hlines(row_idx, -0.5, seq_len - 0.5, color="#e2e8f0", linewidth=0.6, zorder=0)
+
+    for hit_idx, hit in enumerate(placed_hits):
+        width = max(0.8, hit["end_idx"] - hit["start_idx"])
+        x0 = hit["start_idx"] - 0.5
+        y0 = hit["track_row"] - 0.26
+        color = MOTIF_TRACK_COLORS[hit_idx % len(MOTIF_TRACK_COLORS)]
+        ax.add_patch(
+            Rectangle(
+                (x0, y0),
+                width,
+                0.52,
+                facecolor=color,
+                edgecolor="#0f172a",
+                linewidth=0.6,
+                alpha=0.8,
+            )
+        )
+        ax.text(
+            x0 + (width / 2.0),
+            hit["track_row"],
+            str(hit.get("overlap_count", 1)),
+            ha="center",
+            va="center",
+            fontsize=8.5,
+            fontweight="bold",
+            color="white",
+            clip_on=True,
+        )
+
+    shown = len(hits)
+    total = motif_scan.get("total_hits", shown)
+    suffix = f"{shown} non-overlapping hits" if total == shown else f"{shown} non-overlapping of {total} total"
+    ax.set_title(
+        f"Motif hits: {motif_scan['database_label']} ({suffix}, p <= {motif_scan['pvalue_threshold']:.1e})",
+        fontsize=10,
+    )
+
+
+def plot_logo_matrix(
+    attr,
+    title,
+    sequence_start_1,
+    highlights=None,
+    selected_highlights=None,
+    y_limit=None,
+):
     attr = normalize_attr_matrix(attr)
     df = pd.DataFrame(attr, columns=["A", "C", "G", "T"])
     fig_width = max(10, min(22, len(df) / 10))
     fig, ax = plt.subplots(figsize=(fig_width, 2.8))
+    fig.subplots_adjust(left=0.055, right=0.995, bottom=0.22, top=0.88)
     logomaker.Logo(df, ax=ax)
     ax.axhline(0, color="gray", linewidth=0.8)
     ax.set_xlim(-0.5, len(df) - 0.5)
@@ -747,16 +1236,157 @@ def plot_logo_matrix(attr, title, sequence_start_1, highlights=None, selected_hi
     tick_count = min(6, len(df))
     tick_positions = np.linspace(0, len(df) - 1, num=tick_count, dtype=int)
     tick_labels = [str(sequence_start_1 + int(pos)) for pos in tick_positions]
+    add_logo_highlights(ax, highlights=highlights, selected_highlights=selected_highlights)
     ax.set_xticks(tick_positions)
     ax.set_xticklabels(tick_labels, rotation=0)
     ax.set_xlabel("Sequence position")
-    for start, end in selected_highlights or []:
-        if end > start:
-            ax.axvspan(start - 0.5, end - 0.5, color="#d1d5db", alpha=0.5)
-    for start, end in highlights or []:
-        if end > start:
-            ax.axvspan(start - 0.5, end - 0.5, color="#dbeafe", alpha=0.45)
     return fig
+
+
+def motif_hits_dataframe(motif_hits, coordinate_start_1):
+    rows = []
+    for hit in motif_hits:
+        rows.append(
+            {
+                "motif": hit.get("display_label", hit.get("label", "motif")),
+                "full_label": hit.get("label", hit.get("display_label", "motif")).replace("_", " "),
+                "start": coordinate_start_1 + int(hit["start_idx"]),
+                "end": coordinate_start_1 + int(hit["end_idx"]) - 1,
+                "strand": hit.get("strand", "."),
+                "pvalue": hit.get("pvalue"),
+                "score": hit.get("score"),
+                "matched_sequence": hit.get("matched_sequence", ""),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def motif_group_chart_dataframe(motif_scan, coordinate_start_1):
+    rows = []
+    for idx, hit in enumerate(summarize_overlap_groups(motif_scan.get("hits", []))):
+        rows.append(
+            {
+                "group_id": hit["group_id"],
+                "track_row": 0,
+                "start": coordinate_start_1 + int(hit["start_idx"]),
+                "end": coordinate_start_1 + int(hit["end_idx"]) - 1,
+                "box_start": int(hit["start_idx"]),
+                "box_end": int(hit["end_idx"]),
+                "motif": hit.get("display_label", hit.get("label", "motif")),
+                "full_label": hit.get("label", hit.get("display_label", "motif")).replace("_", " "),
+                "overlap_count": int(hit.get("overlap_count", 1)),
+                "pvalue": float(hit.get("pvalue", 1.0)),
+                "score": float(hit.get("score", 0.0)),
+                "strand": hit.get("strand", "."),
+                "matched_sequence": hit.get("matched_sequence", ""),
+                "color": MOTIF_TRACK_COLORS[idx % len(MOTIF_TRACK_COLORS)],
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_interactive_motif_chart(chart_df, axis_label):
+    selection = alt.selection_point(name="motif_pick", fields=["group_id"], on="click", clear="dblclick")
+    base = (
+        alt.Chart(chart_df)
+        .encode(
+            x=alt.X("start:Q", title=axis_label),
+            x2="end:Q",
+            tooltip=[
+                alt.Tooltip("motif:N", title="Representative motif"),
+                alt.Tooltip("start:Q", title="Start"),
+                alt.Tooltip("end:Q", title="End"),
+                alt.Tooltip("pvalue:Q", title="Lowest p-value", format=".2e"),
+                alt.Tooltip("overlap_count:Q", title="Overlapping motifs"),
+            ],
+        )
+        .add_params(selection)
+    )
+
+    boxes = base.mark_rect(cornerRadius=3, stroke="#0f172a", strokeWidth=0.7).encode(
+        y=alt.value(18),
+        y2=alt.value(52),
+        color=alt.Color("color:N", scale=None, legend=None),
+        opacity=alt.condition(selection, alt.value(1.0), alt.value(0.82)),
+    )
+
+    counts = base.mark_text(fontSize=11, fontWeight="bold", color="white").encode(
+        x=alt.X("midpoint:Q"),
+        y=alt.value(35),
+        text="overlap_count:Q",
+    ).transform_calculate(
+        midpoint="(datum.start + datum.end) / 2"
+    )
+
+    return (boxes + counts).properties(height=70).configure_view(stroke=None)
+
+
+def get_selected_group_id(selection_state, selection_name="motif_pick"):
+    try:
+        selected = selection_state["selection"][selection_name]
+    except Exception:
+        return None
+
+    if not selected:
+        return None
+    if isinstance(selected, dict):
+        value = selected.get("group_id")
+        if isinstance(value, list):
+            return value[0] if value else None
+        return value
+    if isinstance(selected, list) and selected:
+        first = selected[0]
+        if isinstance(first, dict):
+            value = first.get("group_id")
+            if isinstance(value, list):
+                return value[0] if value else None
+            return value
+    return None
+
+
+def render_interactive_motif_panel(
+    motif_scan,
+    coordinate_start_1,
+    axis_label,
+    chart_key,
+):
+    chart_df = motif_group_chart_dataframe(motif_scan, coordinate_start_1)
+    if chart_df.empty:
+        st.caption(f"No FIMO hits in {motif_scan['database_label']} at p <= {motif_scan['pvalue_threshold']:.1e}")
+        return
+
+    event = st.altair_chart(
+        build_interactive_motif_chart(chart_df, axis_label),
+        width="stretch",
+        on_select="rerun",
+        selection_mode="motif_pick",
+        key=chart_key,
+    )
+    st.caption(
+        f"Motif hits: {len(chart_df)} overlap groups from {motif_scan['total_hits']} total hits. "
+        "Click a box to inspect overlapping motifs. Double-click to clear."
+    )
+
+    selected_group_id = get_selected_group_id(event)
+    if not selected_group_id:
+        return
+
+    selected_row = chart_df.loc[chart_df["group_id"] == selected_group_id]
+    if selected_row.empty:
+        return
+
+    selected_hits = None
+    for group in summarize_overlap_groups(motif_scan.get("hits", [])):
+        if group["group_id"] == selected_group_id:
+            selected_hits = group["group_hits"]
+            break
+    if not selected_hits:
+        return
+
+    label = selected_row.iloc[0]["full_label"]
+    overlap_count = int(selected_row.iloc[0]["overlap_count"])
+    st.markdown(f"**Selected motif group:** `{label}` with `{overlap_count}` overlapping motif(s)")
+    st.dataframe(motif_hits_dataframe(selected_hits, coordinate_start_1), use_container_width=True)
 
 
 def make_text_page(title, lines, max_chars_per_line=120):
@@ -841,6 +1471,12 @@ if "accumulated_matches" not in st.session_state:
     st.session_state.accumulated_matches = []
 if "logo_y_limit" not in st.session_state:
     st.session_state.logo_y_limit = DEFAULT_LOGO_YLIM
+if "fimo_enabled" not in st.session_state:
+    st.session_state.fimo_enabled = DEFAULT_FIMO_ENABLED
+if "motif_database" not in st.session_state:
+    st.session_state.motif_database = DEFAULT_MOTIF_DATABASE
+if "fimo_pvalue" not in st.session_state:
+    st.session_state.fimo_pvalue = DEFAULT_FIMO_PVALUE
 if "last_search_added" not in st.session_state:
     st.session_state.last_search_added = ""
 if "pending_search_selection" not in st.session_state:
@@ -1117,6 +1753,35 @@ with st.sidebar:
         format="%.3f",
     )
     st.session_state.logo_y_limit = logo_y_limit
+    motif_database_options = discover_available_motif_databases()
+    st.subheader("Motif scan")
+    st.session_state.fimo_enabled = st.checkbox(
+        "Run FIMO on displayed sequences",
+        value=bool(st.session_state.fimo_enabled),
+        help="Adds a motif-hit track below each logo plot using the selected motif database.",
+    )
+    if motif_database_options:
+        current_motif_database = (
+            st.session_state.motif_database
+            if st.session_state.motif_database in motif_database_options
+            else motif_database_options[0]
+        )
+        st.session_state.motif_database = st.selectbox(
+            "Motif database",
+            options=motif_database_options,
+            index=motif_database_options.index(current_motif_database),
+            disabled=not st.session_state.fimo_enabled,
+        )
+    else:
+        st.warning("No JASPAR or HOCOMOCO motif databases were found for FIMO.")
+    st.session_state.fimo_pvalue = st.number_input(
+        "FIMO p-value threshold",
+        min_value=1e-8,
+        max_value=1.0,
+        value=float(st.session_state.fimo_pvalue),
+        format="%.1e",
+        disabled=not st.session_state.fimo_enabled or not motif_database_options,
+    )
 
 
 st.subheader("1. Sequence browser")
@@ -1408,6 +2073,15 @@ for start, end in st.session_state.browser_highlight_intervals:
 if not highlight_intervals:
     highlight_intervals = [fallback_highlight]
 
+browser_motif_scan = (
+    scan_sequence_with_fimo(
+        browser_seq,
+        st.session_state.motif_database,
+        st.session_state.fimo_pvalue,
+    )
+    if st.session_state.fimo_enabled and discover_available_motif_databases()
+    else None
+)
 browser_logo_fig = plot_logo_matrix(
     extract_attr_window(get_attr(browser_seq, tuple(model_files))[0], len(browser_seq)),
     "Current logo",
@@ -1416,6 +2090,13 @@ browser_logo_fig = plot_logo_matrix(
     y_limit=st.session_state.logo_y_limit,
 )
 st.pyplot(browser_logo_fig)
+if browser_motif_scan is not None:
+    render_interactive_motif_panel(
+        browser_motif_scan,
+        browser_start_1,
+        "Sequence position",
+        "fasta_browser_motif_track",
+    )
 st.code(
     f"{chrom}:{browser_start_1}-{browser_end_1}\n"
     f"{make_position_ruler(browser_start_1, browser_end_1)}\n"
@@ -1512,6 +2193,8 @@ enhancer_attr_after = slice_attr_to_sequence_window(
     enhancer_start_idx,
     enhancer_end_idx,
 )
+enhancer_seq_before = active_original_seq[enhancer_start_idx:enhancer_end_idx]
+enhancer_seq_after = active_seq[enhancer_start_idx:enhancer_end_idx]
 enhancer_selected_intervals = []
 enhancer_selected_labels = []
 for (start, end), label in zip(output_selected_intervals, output_selected_labels):
@@ -1600,6 +2283,22 @@ add_window_labels(
     deleted_windows=st.session_state.deleted_windows,
 )
 st.pyplot(before_logo_fig)
+before_motif_scan = (
+    scan_sequence_with_fimo(
+        enhancer_seq_before,
+        st.session_state.motif_database,
+        st.session_state.fimo_pvalue,
+    )
+    if st.session_state.fimo_enabled and discover_available_motif_databases()
+    else None
+)
+if before_motif_scan is not None:
+    render_interactive_motif_panel(
+        before_motif_scan,
+        enhancer_start_1,
+        "Sequence position",
+        "fasta_before_motif_track",
+    )
 after_logo_fig = plot_logo_matrix(
     enhancer_attr_after,
     "After enhancer logo",
@@ -1613,6 +2312,22 @@ add_window_labels(
     deleted_windows=st.session_state.deleted_windows,
 )
 st.pyplot(after_logo_fig)
+after_motif_scan = (
+    scan_sequence_with_fimo(
+        enhancer_seq_after,
+        st.session_state.motif_database,
+        st.session_state.fimo_pvalue,
+    )
+    if st.session_state.fimo_enabled and discover_available_motif_databases()
+    else None
+)
+if after_motif_scan is not None:
+    render_interactive_motif_panel(
+        after_motif_scan,
+        enhancer_start_1,
+        "Sequence position",
+        "fasta_after_motif_track",
+    )
 
 report_summary_fig = make_text_page(
     "ChromBPNet FASTA Report",
