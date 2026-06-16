@@ -50,7 +50,7 @@ SCRIPT_DIR="$(resolve_script_dir)" || {
 }
 cd "$SCRIPT_DIR"
 
-source "$SCRIPT_DIR/../config.sh"
+source "$SCRIPT_DIR/../source_dataset_config.sh" "$SCRIPT_DIR"
 
 BIAS_CLUSTER="${chrombpnet_bias_cluster}"
 BIAS_MIN_THRESH="${chrombpnet_bias_min_thresh}"
@@ -331,7 +331,13 @@ echo "R module: ${R_MODULE}"
 
 assert_file_exists "Reference FASTA" "${ref_fasta}"
 assert_file_exists "Chrom sizes" "${chromsizes}"
-assert_file_exists "MEME database" "${MEME_DB}"
+
+HAS_MEME_DB=1
+if [[ ! -f "${MEME_DB}" ]]; then
+  HAS_MEME_DB=0
+  echo "[$(timestamp)] WARNING: MEME database not found: ${MEME_DB}"
+  echo "[$(timestamp)] WARNING: Steps 06-09 will be skipped after training/QC/contribution stages complete."
+fi
 
 TOTAL_DATASETS=$(dataset_count_all)
 TARGET_FOLDS=$(( TOTAL_DATASETS * NUM_FOLDS ))
@@ -353,7 +359,9 @@ else
   BIAS_MIN_THRESH="${BIAS_MIN_THRESH}" \
   BIAS_FOLD="${BIAS_FOLD}" \
   DATA_TYPE="${DATA_TYPE}" \
-  sbatch ${BIAS_SBATCH_ARGS} 01-train_bias_model.sh
+  sbatch ${BIAS_SBATCH_ARGS} \
+    --export=ALL,CHROMBPNET_DATA_ROOT="${CHROMBPNET_DATA_ROOT:-}",CHROMBPNET_CONFIG="${CHROMBPNET_CONFIG:-}",BIAS_CLUSTER="${BIAS_CLUSTER}",BIAS_MIN_THRESH="${BIAS_MIN_THRESH}",BIAS_FOLD="${BIAS_FOLD}",DATA_TYPE="${DATA_TYPE}" \
+    01-train_bias_model.sh
 fi
 
 wait_for_count \
@@ -419,6 +427,12 @@ wait_for_count \
   "count_dataset_level_outputs '${contribs_dir%/}/bias_${BIAS_PARAMS}' 'average_shaps.profile.h5'"
 
 echo "[$(timestamp)] Step 06: MoDISco submit"
+if [[ "${HAS_MEME_DB}" != "1" ]]; then
+  echo "[$(timestamp)] Stopping after Step 05 because MEME_DB is unavailable."
+  echo "[$(timestamp)] Training, QC, and contribution-score stages completed up to the current checkpoint."
+  exit 0
+fi
+
 activate_modiscolite
 BIAS_PARAMS="${BIAS_PARAMS}" MEME_DB="${MEME_DB}" bash 06-modisco.sh
 

@@ -67,7 +67,9 @@ def resolve_index(barcode: str, exact: dict[str, set[int]], bare: dict[str, set[
 
 
 def open_fragment_input(path: Path):
-    if path.suffix == ".gz":
+    with path.open("rb") as handle:
+        magic = handle.read(2)
+    if path.suffix in {".gz", ".bgz"} or magic == b"\x1f\x8b":
         return gzip.open(path, "rt", encoding="utf-8")
     return path.open("r", encoding="utf-8")
 

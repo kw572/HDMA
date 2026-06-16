@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-source ../config.sh
+source ../source_dataset_config.sh "$(pwd)"
 
 dataset="${CHROMBPNET_TRAIN_DATASET:?CHROMBPNET_TRAIN_DATASET is required}"
 fold_name="${CHROMBPNET_TRAIN_FOLD:?CHROMBPNET_TRAIN_FOLD is required}"

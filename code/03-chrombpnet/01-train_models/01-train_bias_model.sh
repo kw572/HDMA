@@ -57,8 +57,8 @@ done
 
 # PARAMETERS -------------------------------------------------------------------
 
-# source configuration variables
-source ../config.sh
+# source dataset-specific configuration variables
+source ../source_dataset_config.sh "$(pwd)"
 
 # set parameters
 min_thresh="${chrombpnet_bias_min_thresh}"

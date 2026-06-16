@@ -10,8 +10,8 @@ set -euo pipefail
 
 # PARAMETERS -------------------------------------------------------------------
 
-# source configuration variables
-source ../config.sh
+# source dataset-specific configuration variables
+source ../source_dataset_config.sh "$(pwd)"
 
 # set bias model
 bias_params="${chrombpnet_bias_params}"
@@ -92,12 +92,12 @@ for dataset in ${datasets}; do
 			fi
 
 			echo "Running chrombpnet pipeline for ${dataset} ${fold_name}"
-			echo "config=${PWD}/../config.sh"
+			echo "config=${CHROMBPNET_CONFIG}"
 			echo "bias_model=${bias_model}"
 			echo "output_dir=${fold_dir}"
 
 			sbatch "${train_sbatch_extra_args[@]}" \
-				--export=ALL,CHROMBPNET_TRAIN_DATASET="${dataset}",CHROMBPNET_TRAIN_FOLD="${fold_name}",CHROMBPNET_TRAIN_BIAS_PARAMS="${bias_params}",CHROMBPNET_TRAIN_OUT_DIR="${fold_dir}" \
+				--export=ALL,CHROMBPNET_DATA_ROOT="${CHROMBPNET_DATA_ROOT:-}",CHROMBPNET_CONFIG="${CHROMBPNET_CONFIG:-}",CHROMBPNET_TRAIN_DATASET="${dataset}",CHROMBPNET_TRAIN_FOLD="${fold_name}",CHROMBPNET_TRAIN_BIAS_PARAMS="${bias_params}",CHROMBPNET_TRAIN_OUT_DIR="${fold_dir}" \
 				-J "${job_name}" \
 				"${JOBSCRIPT}"
 		fi
